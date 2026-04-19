@@ -132,6 +132,7 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
+          provenance: false
           tags: |
             ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.internal }}
             ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.upstream }}
