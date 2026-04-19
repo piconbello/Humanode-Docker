@@ -123,6 +123,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Lowercase repository name
+        id: repo
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - name: Build + push (linux/amd64)
         uses: docker/build-push-action@v6
         with:
@@ -130,6 +133,6 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.internal }}
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.upstream }}
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.internal }}
+            ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.upstream }}
+            ghcr.io/${{ steps.repo.outputs.name }}:latest
