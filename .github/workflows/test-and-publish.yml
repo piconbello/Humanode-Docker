@@ -100,7 +100,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v4
@@ -137,3 +137,33 @@ jobs:
             ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.internal }}
             ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.upstream }}
             ghcr.io/${{ steps.repo.outputs.name }}:latest
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.internal }}"
+          gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 && exit 0
+
+          PREV_TAG=$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)
+
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          fi
+
+          NOTES="## Docker image
+          \`\`\`
+          docker pull ghcr.io/${{ steps.repo.outputs.name }}:$TAG
+          \`\`\`
+
+          **Tags:** \`$TAG\` · \`${{ steps.version.outputs.upstream }}\` · \`latest\`
+
+          ## Changelog
+          ${CHANGELOG}"
+
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title "$TAG" \
+            --notes "$NOTES" \
+            --latest
