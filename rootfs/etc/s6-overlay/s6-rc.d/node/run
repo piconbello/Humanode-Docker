@@ -1,0 +1,23 @@
+#!/command/with-contenv sh
+set -eu
+
+NODE_NAME="${NODE_NAME:-humanode-validator}"
+SYNC_MODE="${SYNC_MODE:-warp}"
+
+VALIDATOR_FLAG=""
+if find /data/chains -type f -path '*/keystore/6b626169*' 2>/dev/null | grep -q .; then
+    VALIDATOR_FLAG="--validator"
+fi
+
+exec 2>&1
+exec s6-setuidgid hmnd \
+    humanode-peer \
+        ${VALIDATOR_FLAG} \
+        --chain /etc/humanode/chainspec.json \
+        --base-path /data \
+        --name "${NODE_NAME}" \
+        --rpc-port 9944 \
+        --unsafe-rpc-external \
+        --rpc-cors all \
+        --sync "${SYNC_MODE}" \
+        --port 30333

@@ -1,0 +1,7 @@
+#!/command/execlineb -P
+
+with-contenv
+
+fdmove -c 2 1
+s6-setuidgid botuser
+python3 -m hmnd_bot

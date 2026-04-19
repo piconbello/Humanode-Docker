@@ -1,0 +1,135 @@
+name: test-and-publish
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  bot-unit-tests:
+    name: Bot unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install bot + dev deps
+        working-directory: bot
+        run: pip install -e ".[dev]"
+      - name: pytest
+        working-directory: bot
+        run: pytest -q
+
+  build:
+    name: Build image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (amd64, loadable)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          tags: hmnd-validator:test
+          outputs: type=docker,dest=/tmp/hmnd-validator.tar
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hmnd-validator-image
+          path: /tmp/hmnd-validator.tar
+          retention-days: 1
+
+  image-tests:
+    name: Image-level tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: hmnd-validator-image
+          path: /tmp
+      - name: Load image
+        run: docker load -i /tmp/hmnd-validator.tar
+      - name: test_image_build
+        run: IMAGE=hmnd-validator:test sh tests/image/test_image_build.sh
+      - name: test_entrypoint_routing
+        run: IMAGE=hmnd-validator:test sh tests/image/test_entrypoint_routing.sh
+      - name: test_insert_key
+        run: IMAGE=hmnd-validator:test sh tests/image/test_insert_key.sh
+      - name: test_seed_not_logged
+        run: IMAGE=hmnd-validator:test sh tests/image/test_seed_not_logged.sh
+
+  sync-test:
+    name: Sync + RPC contract test
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: hmnd-validator-image
+          path: /tmp
+      - name: Load image
+        run: docker load -i /tmp/hmnd-validator.tar
+      - name: sync-test
+        env:
+          IMAGE: hmnd-validator:test
+          PEER_BUDGET_S: "180"
+          PROGRESS_BUDGET_S: "480"
+        run: sh ci/sync-test.sh
+      - name: rpc-contract-test
+        run: |
+          docker rm -f hmnd-rpc-ct 2>/dev/null || true
+          docker volume create hmnd-rpc-ct-vol
+          docker run -d --name hmnd-rpc-ct -v hmnd-rpc-ct-vol:/data hmnd-validator:test
+          for i in $(seq 1 60); do
+            if docker exec hmnd-rpc-ct sh -c 'curl -sS -o /dev/null -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"system_health\",\"params\":[]}" http://127.0.0.1:9944' 2>/dev/null; then break; fi
+            sleep 2
+          done
+          python3 ci/rpc-contract-test.py hmnd-rpc-ct
+          docker rm -f hmnd-rpc-ct
+          docker volume rm hmnd-rpc-ct-vol
+
+  publish:
+    name: Publish to GHCR
+    needs: [bot-unit-tests, image-tests, sync-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute version + internal revision
+        id: version
+        run: |
+          VERSION="$(tr -d '[:space:]' < artifacts/humanode-version.txt)"
+          N=$(( $(git log --format=%H -- artifacts/humanode-version.txt \
+                    | while read sha; do
+                        val="$(git show "$sha:artifacts/humanode-version.txt" 2>/dev/null | tr -d '[:space:]')"
+                        [ "$val" = "$VERSION" ] && echo "$sha"
+                      done | wc -l) + 1 ))
+          echo "upstream=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "internal=${VERSION}-r${N}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build + push (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.internal }}
+            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.upstream }}
+            ghcr.io/${{ github.repository }}:latest

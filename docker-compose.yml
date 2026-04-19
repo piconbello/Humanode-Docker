@@ -1,0 +1,16 @@
+services:
+  humanode:
+    build: .
+    image: hmnd-validator:test
+    container_name: humanode-validator
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - hmnd-data:/data
+    ports:
+      - "30333:30333/tcp"
+    stop_grace_period: 35s
+
+volumes:
+  hmnd-data:
+    external: true

@@ -1,0 +1,50 @@
+name: upstream-release-watch
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect latest upstream tag
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$(sh .github/scripts/detect-upstream-release.sh)"
+          echo "upstream_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "current_tag=$(tr -d '[:space:]' < artifacts/humanode-version.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Exit if already current
+        if: steps.detect.outputs.upstream_tag == steps.detect.outputs.current_tag
+        run: |
+          echo "already at ${{ steps.detect.outputs.upstream_tag }}; nothing to do"
+          exit 0
+
+      - name: Bump artifacts
+        if: steps.detect.outputs.upstream_tag != steps.detect.outputs.current_tag
+        run: sh .github/scripts/bump-artifacts.sh "${{ steps.detect.outputs.upstream_tag }}"
+
+      - name: Open or update PR
+        if: steps.detect.outputs.upstream_tag != steps.detect.outputs.current_tag
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(upstream): bump to ${{ steps.detect.outputs.upstream_tag }}"
+          title: "chore(upstream): bump to ${{ steps.detect.outputs.upstream_tag }} [automated]"
+          branch: chore/upstream-${{ steps.detect.outputs.upstream_tag }}
+          delete-branch: true
+          body: |
+            Automated upstream bump.
+
+            - Previous: `${{ steps.detect.outputs.current_tag }}`
+            - New:      `${{ steps.detect.outputs.upstream_tag }}`
+
+            Release: https://github.com/humanode-network/distribution/releases/tag/${{ steps.detect.outputs.upstream_tag }}
