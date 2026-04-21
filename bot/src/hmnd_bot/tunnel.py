@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 NGROK_BIN = "/usr/local/bin/ngrok-real"
 NGROK_API = "http://127.0.0.1:4040/api/tunnels"
+NGROK_POLICY_FILE = "/etc/ngrok/policy.yml"
 NGROK_START_TIMEOUT_S = 30
 
 
@@ -47,6 +48,7 @@ class NgrokTunnel:
         self._process = await asyncio.create_subprocess_exec(
             NGROK_BIN, "http", str(self._rpc_port),
             "--log", "stdout", "--log-format", "logfmt",
+            f"--traffic-policy-file={NGROK_POLICY_FILE}",
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,

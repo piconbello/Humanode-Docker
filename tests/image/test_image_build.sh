@@ -46,4 +46,23 @@ if [ "$ENTRYPOINT" != '["/entrypoint.sh"]' ]; then
     fail "entrypoint is $ENTRYPOINT (expected [\"/entrypoint.sh\"])"
 fi
 
+echo "check: ngrok traffic-policy file present"
+docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -f /etc/ngrok/policy.yml' \
+    || fail "ngrok policy missing at /etc/ngrok/policy.yml"
+
+MODE_OWNER="$(docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'stat -c "%a %U %G" /etc/ngrok/policy.yml')"
+if [ "$MODE_OWNER" != "644 root root" ]; then
+    fail "ngrok policy mode/owner wrong: got '$MODE_OWNER', expected '644 root root'"
+fi
+
+docker run --rm --entrypoint /bin/sh "$IMAGE" -c \
+    'grep -q "host: \"127.0.0.1\"" /etc/ngrok/policy.yml' \
+    || fail "ngrok policy does not rewrite Host to 127.0.0.1"
+
+echo "check: node run script does not pass --unsafe-rpc-external"
+if docker run --rm --entrypoint /bin/sh "$IMAGE" -c \
+        'grep -q -- "--unsafe-rpc-external" /etc/s6-overlay/s6-rc.d/node/run'; then
+    fail "node run script still carries --unsafe-rpc-external"
+fi
+
 echo "ok: image build smoke test passed"
