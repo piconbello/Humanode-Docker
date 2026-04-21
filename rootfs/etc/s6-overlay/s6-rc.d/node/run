@@ -17,7 +17,6 @@ exec s6-setuidgid hmnd \
         --base-path /data \
         --name "${NODE_NAME}" \
         --rpc-port 9944 \
-        --unsafe-rpc-external \
         --rpc-cors all \
         --sync "${SYNC_MODE}" \
         --port 30333
