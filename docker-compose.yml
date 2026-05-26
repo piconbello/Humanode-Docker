@@ -1,7 +1,7 @@
 services:
   humanode:
     build: .
-    image: hmnd-validator:test
+    image: hmnd-validator:latest
     container_name: humanode-validator
     restart: unless-stopped
     env_file: .env

@@ -43,24 +43,24 @@ class Config:
     ngrok_authtoken: str
     node_name: str
     sync_mode: str
-    bioauth_remind_before: list[timedelta]
-    bioauth_remind_after: list[timedelta]
-    block_stall_threshold: timedelta
-    block_stall_remind_after: list[timedelta]
-    finality_stall_threshold: timedelta
-    finality_stall_remind_after: list[timedelta]
+    bioauth_remind_before: list[timedelta] | None
+    bioauth_remind_after: list[timedelta] | None
+    block_stall_threshold: timedelta | None
+    block_stall_remind_after: list[timedelta] | None
+    finality_stall_threshold: timedelta | None
+    finality_stall_remind_after: list[timedelta] | None
     rpc_url: str = "ws://127.0.0.1:9944"
 
 
 _DEFAULTS: dict[str, str] = {
     "NODE_NAME": "humanode-validator",
-    "SYNC_MODE": "warp",
-    "BIOAUTH_REMIND_BEFORE": "1d,3h,1h,10m",
-    "BIOAUTH_REMIND_AFTER": "5m,15m,30m,1h,2h",
-    "BLOCK_STALL_THRESHOLD": "5m",
-    "BLOCK_STALL_REMIND_AFTER": "15m,30m,1h,2h",
-    "FINALITY_STALL_THRESHOLD": "5m",
-    "FINALITY_STALL_REMIND_AFTER": "15m,30m,1h,2h",
+    "SYNC_MODE": "full",
+    "BIOAUTH_REMIND_BEFORE": "",
+    "BIOAUTH_REMIND_AFTER": "",
+    "BLOCK_STALL_THRESHOLD": "",
+    "BLOCK_STALL_REMIND_AFTER": "",
+    "FINALITY_STALL_THRESHOLD": "",
+    "FINALITY_STALL_REMIND_AFTER": "",
 }
 
 _VALID_SYNC_MODES = {"warp", "full", "fast", "fast-unsafe"}
@@ -99,10 +99,10 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         ngrok_authtoken=ngrok_authtoken,
         node_name=_optional(e, "NODE_NAME"),
         sync_mode=sync_mode,
-        bioauth_remind_before=parse_duration_list(_optional(e, "BIOAUTH_REMIND_BEFORE")),
-        bioauth_remind_after=parse_duration_list(_optional(e, "BIOAUTH_REMIND_AFTER")),
-        block_stall_threshold=parse_duration(_optional(e, "BLOCK_STALL_THRESHOLD")),
-        block_stall_remind_after=parse_duration_list(_optional(e, "BLOCK_STALL_REMIND_AFTER")),
-        finality_stall_threshold=parse_duration(_optional(e, "FINALITY_STALL_THRESHOLD")),
-        finality_stall_remind_after=parse_duration_list(_optional(e, "FINALITY_STALL_REMIND_AFTER")),
+        bioauth_remind_before=parse_duration_list(v) if (v := _optional(e, "BIOAUTH_REMIND_BEFORE")) else None,
+        bioauth_remind_after=parse_duration_list(v) if (v := _optional(e, "BIOAUTH_REMIND_AFTER")) else None,
+        block_stall_threshold=parse_duration(v) if (v := _optional(e, "BLOCK_STALL_THRESHOLD")) else None,
+        block_stall_remind_after=parse_duration_list(v) if (v := _optional(e, "BLOCK_STALL_REMIND_AFTER")) else None,
+        finality_stall_threshold=parse_duration(v) if (v := _optional(e, "FINALITY_STALL_THRESHOLD")) else None,
+        finality_stall_remind_after=parse_duration_list(v) if (v := _optional(e, "FINALITY_STALL_REMIND_AFTER")) else None,
     )

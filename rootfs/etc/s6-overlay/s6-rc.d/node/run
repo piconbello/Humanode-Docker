@@ -2,7 +2,7 @@
 set -eu
 
 NODE_NAME="${NODE_NAME:-humanode-validator}"
-SYNC_MODE="${SYNC_MODE:-warp}"
+SYNC_MODE="${SYNC_MODE:-full}"
 
 VALIDATOR_FLAG=""
 if find /data/chains -type f -path '*/keystore/6b626169*' 2>/dev/null | grep -q .; then

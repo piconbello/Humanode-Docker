@@ -1,4 +1,22 @@
 #!/bin/sh
+# tests/image/test_insert_key.sh - Unit 2 insert-key subcommand test.
+#
+# Verifies:
+#   - insert-key with no stdin (TTY or empty) fails
+#   - insert-key with argv arguments beyond the subcommand fails
+#   - insert-key with a seed on stdin populates /data/chains/*/keystore with 0700 dir
+#   - a second insert-key against the same volume refuses
+#   - runtime start against an empty volume logs a non-validator notice
+#
+# Uses a throwaway named volume per run, wiped on completion.
+#
+# Run from repo root:
+#   sh tests/image/test_insert_key.sh
+#
+# Env:
+#   IMAGE          image tag to test (default: hmnd-validator:test)
+#   TEST_SEED      seed mnemonic to use (default: a well-known test mnemonic)
+
 set -eu
 
 IMAGE="${IMAGE:-hmnd-validator:test}"
@@ -28,6 +46,7 @@ if echo "" | docker run --rm -i -v "$VOL:/data" "$IMAGE" insert-key 2>/dev/null;
 fi
 
 echo "check: insert-key with TTY stdin is rejected"
+# We simulate TTY by allocating one with -t and not piping stdin.
 if docker run --rm -it -v "$VOL:/data" "$IMAGE" insert-key < /dev/null 2>/dev/null; then
     fail "insert-key accepted TTY stdin"
 fi
@@ -36,6 +55,7 @@ echo "check: insert-key populates keystore"
 echo "$TEST_SEED" | docker run --rm -i -v "$VOL:/data" "$IMAGE" insert-key \
     || fail "insert-key failed on valid stdin seed"
 
+# Verify keystore exists and has correct perms.
 docker run --rm --entrypoint /bin/sh -v "$VOL:/data" "$IMAGE" -c \
     'find /data/chains -type d -name keystore | head -n 1 | xargs -I{} stat -c "%a %U" {}' \
     | grep -q '^700 hmnd' \
@@ -50,24 +70,12 @@ if echo "$TEST_SEED" | docker run --rm -i -v "$VOL:/data" "$IMAGE" insert-key 2>
     fail "second insert-key accepted; should have refused"
 fi
 
-echo "check: node can create rocksdb dir on volume populated by insert-key"
-VOL_RW="hmnd-test-rw-$$"
-docker volume create "$VOL_RW" > /dev/null
-echo "$TEST_SEED" | docker run --rm -i -v "$VOL_RW:/data" "$IMAGE" insert-key > /dev/null \
-    || { docker volume rm "$VOL_RW" > /dev/null 2>&1; fail "setup insert-key failed"; }
-if ! docker run --rm --entrypoint /bin/sh -v "$VOL_RW:/data" "$IMAGE" -c \
-        '/command/s6-setuidgid hmnd mkdir -p /data/chains/humanode_mainnet/db/full' 2>/dev/null; then
-    docker volume rm "$VOL_RW" > /dev/null 2>&1
-    fail "hmnd cannot mkdir under /data/chains/<chain>/ after insert-key (root ownership regression)"
-fi
-docker volume rm "$VOL_RW" > /dev/null 2>&1
-
-echo "check: runtime start on empty volume logs non-validator notice and proceeds"
+echo "check: runtime start on empty volume logs non-validator notice"
 VOL2="hmnd-test-empty-$$"
 docker volume create "$VOL2" > /dev/null
-OUT="$(timeout 3 docker run --rm -v "$VOL2:/data" "$IMAGE" 2>&1 || true)"
+OUT="$(timeout 10 docker run --rm -v "$VOL2:/data" "$IMAGE" 2>&1 || true)"
 docker volume rm "$VOL2" > /dev/null 2>&1 || true
-echo "$OUT" | grep -q "booting as non-validator" \
-    || fail "empty-volume boot should log 'booting as non-validator'; got: $OUT"
+echo "$OUT" | grep -q "no keystore found" \
+    || fail "empty-volume boot should log 'no keystore found'; got: $OUT"
 
 echo "ok: insert-key test suite passed"

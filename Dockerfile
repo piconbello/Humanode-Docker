@@ -1,13 +1,8 @@
-FROM ubuntu:24.04
+# ── Build stage: fetch all binaries, install Python deps ──
+FROM ubuntu:24.04 AS build
 
 ARG S6_OVERLAY_VERSION=3.2.0.0
-ARG TARGETARCH=amd64
-
-ENV DEBIAN_FRONTEND=noninteractive \
-    S6_KILL_GRACETIME=30000 \
-    S6_SERVICES_GRACETIME=30000 \
-    S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
-    PATH=/usr/local/bin:$PATH
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -16,7 +11,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         python3-pip \
         python3-venv \
-        tini \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" \
@@ -34,16 +28,45 @@ RUN curl -fsSL -o /tmp/ngrok.tgz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-s
 
 COPY artifacts/humanode-version.txt /build/humanode-version.txt
 COPY build/fetch-upstream.sh /build/fetch-upstream.sh
-RUN /build/fetch-upstream.sh \
+RUN chmod +x /build/fetch-upstream.sh && /build/fetch-upstream.sh \
     && rm -rf /build
+
+COPY bot/ /opt/hmnd_bot/
+RUN pip3 install --no-cache-dir --break-system-packages /opt/hmnd_bot \
+    && rm -rf /opt/hmnd_bot
+
+# ── Runtime stage: minimal surface ──
+FROM ubuntu:24.04
+
+ENV S6_KILL_GRACETIME=30000 \
+    S6_SERVICES_GRACETIME=30000 \
+    S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
+    PATH=/usr/local/bin:$PATH
+
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        python3 \
+        libpython3-stdlib \
+        tini \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+
+COPY --from=build /init /init
+COPY --from=build /command /command
+COPY --from=build /package /package
+COPY --from=build /etc/s6-overlay /etc/s6-overlay
+COPY --from=build /usr/local/bin/humanode-peer /usr/local/bin/humanode-peer
+COPY --from=build /etc/humanode/chainspec.json /etc/humanode/chainspec.json
+COPY --from=build /usr/local/bin/ngrok-real /usr/local/bin/ngrok-real
+COPY --from=build /usr/local/lib/python3.12 /usr/local/lib/python3.12
 
 RUN groupadd --system --gid 1100 hmnd \
     && useradd --system --uid 1100 --gid hmnd --home-dir /data --no-create-home --shell /usr/sbin/nologin hmnd \
     && groupadd --system --gid 1101 botuser \
     && useradd --system --uid 1101 --gid botuser --home-dir /var/empty --no-create-home --shell /usr/sbin/nologin botuser
-
-COPY bot/ /opt/hmnd_bot/
-RUN pip3 install --no-cache-dir --break-system-packages /opt/hmnd_bot
 
 COPY rootfs/ /
 
