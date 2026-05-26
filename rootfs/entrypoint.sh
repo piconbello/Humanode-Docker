@@ -7,7 +7,7 @@ ensure_data_layout() {
         chmod 0755 /data
     fi
     mkdir -p /data/chains
-    chown hmnd:hmnd /data/chains
+    chown -R hmnd:hmnd /data/chains
     chmod 0750 /data/chains
     mkdir -p /data/bot-state
     chown botuser:botuser /data/bot-state

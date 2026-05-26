@@ -22,7 +22,7 @@ if find "$BASE_PATH/chains" -type f -path '*/keystore/6b626169*' 2>/dev/null | g
     exit 1
 fi
 
-SEED="$(cat)"
+SEED="$(cat | tr -d '\r')"
 
 if [ -z "$SEED" ]; then
     echo "error: no seed received on stdin" >&2
@@ -56,6 +56,11 @@ humanode-peer key insert \
     --chain "$CHAINSPEC" \
     --base-path "$BASE_PATH" \
     --suri "$TMPSEED"
+
+if ! find "$BASE_PATH/chains" -type f -path '*/keystore/6b626169*' 2>/dev/null | grep -q .; then
+    echo "error: key insertion failed — no keystore entry created" >&2
+    exit 1
+fi
 
 chown -R hmnd:hmnd "$BASE_PATH/chains"
 

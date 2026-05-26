@@ -1,22 +1,17 @@
-#!/command/with-contenv sh
-set -eu
+#!/command/execlineb -P
 
-NODE_NAME="${NODE_NAME:-humanode-validator}"
-SYNC_MODE="${SYNC_MODE:-warp}"
+with-contenv
+importas -D "humanode-validator" NODE_NAME NODE_NAME
+importas -D "full" SYNC_MODE SYNC_MODE
 
-VALIDATOR_FLAG=""
-if find /data/chains -type f -path '*/keystore/6b626169*' 2>/dev/null | grep -q .; then
-    VALIDATOR_FLAG="--validator"
-fi
-
-exec 2>&1
-exec s6-setuidgid hmnd \
-    humanode-peer \
-        ${VALIDATOR_FLAG} \
-        --chain /etc/humanode/chainspec.json \
-        --base-path /data \
-        --name "${NODE_NAME}" \
-        --rpc-port 9944 \
-        --rpc-cors all \
-        --sync "${SYNC_MODE}" \
-        --port 30333
+fdmove -c 2 1
+s6-setuidgid hmnd
+humanode-peer
+    --validator
+    --chain /etc/humanode/chainspec.json
+    --base-path /data
+    --name ${NODE_NAME}
+    --rpc-port 9944
+    --rpc-cors none
+    --sync ${SYNC_MODE}
+    --port 30333

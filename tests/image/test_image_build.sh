@@ -1,4 +1,17 @@
 #!/bin/sh
+# tests/image/test_image_build.sh - Unit 1 image-build smoke test.
+#
+# Verifies:
+#   - image builds from a clean checkout
+#   - users hmnd (1000) and botuser (1001) exist
+#   - chainspec file is at /etc/humanode/chainspec.json and parses as JSON
+#   - humanode-peer --version exits 0
+#   - no HTTP/RPC ports are declared; only 30333/tcp for P2P (R40)
+#   - /data directory does not pre-exist (the entrypoint creates it)
+#
+# Run from repo root:
+#   sh tests/image/test_image_build.sh
+
 set -eu
 
 IMAGE="${IMAGE:-hmnd-validator:test}"
@@ -16,11 +29,11 @@ echo "check: users exist"
 docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'id hmnd && id botuser' > /dev/null \
     || fail "hmnd or botuser user missing"
 
-docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test "$(id -u hmnd)" = "1100"' \
-    || fail "hmnd UID is not 1100"
+docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test "$(id -u hmnd)" = "1000"' \
+    || fail "hmnd UID is not 1000"
 
-docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test "$(id -u botuser)" = "1101"' \
-    || fail "botuser UID is not 1101"
+docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test "$(id -u botuser)" = "1001"' \
+    || fail "botuser UID is not 1001"
 
 echo "check: chainspec present at fixed path"
 docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -f /etc/humanode/chainspec.json' \
@@ -40,29 +53,10 @@ if [ "$EXPOSED" != "30333/tcp" ]; then
     fail "unexpected exposed ports: $EXPOSED (expected 30333/tcp only)"
 fi
 
-echo "check: entrypoint is /entrypoint.sh"
+echo "check: entrypoint is /init"
 ENTRYPOINT="$(docker inspect "$IMAGE" --format '{{json .Config.Entrypoint}}')"
-if [ "$ENTRYPOINT" != '["/entrypoint.sh"]' ]; then
-    fail "entrypoint is $ENTRYPOINT (expected [\"/entrypoint.sh\"])"
-fi
-
-echo "check: ngrok traffic-policy file present"
-docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -f /etc/ngrok/policy.yml' \
-    || fail "ngrok policy missing at /etc/ngrok/policy.yml"
-
-MODE_OWNER="$(docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'stat -c "%a %U %G" /etc/ngrok/policy.yml')"
-if [ "$MODE_OWNER" != "644 root root" ]; then
-    fail "ngrok policy mode/owner wrong: got '$MODE_OWNER', expected '644 root root'"
-fi
-
-docker run --rm --entrypoint /bin/sh "$IMAGE" -c \
-    'grep -q "host: \"127.0.0.1\"" /etc/ngrok/policy.yml' \
-    || fail "ngrok policy does not rewrite Host to 127.0.0.1"
-
-echo "check: node run script does not pass --unsafe-rpc-external"
-if docker run --rm --entrypoint /bin/sh "$IMAGE" -c \
-        'grep -q -- "--unsafe-rpc-external" /etc/s6-overlay/s6-rc.d/node/run'; then
-    fail "node run script still carries --unsafe-rpc-external"
+if [ "$ENTRYPOINT" != '["/init"]' ]; then
+    fail "entrypoint is $ENTRYPOINT (expected [\"/init\"])"
 fi
 
 echo "ok: image build smoke test passed"

@@ -112,29 +112,6 @@ async def main() -> int:
 
     first_sync = FirstSyncWatcher(node=node, notify=send_text)
 
-    bioauth = BioauthScheduler(
-        node=node, tunnel=tunnel, first_sync=first_sync,
-        send_photo=send_photo, send_text=send_text,
-        remind_before=cfg.bioauth_remind_before,
-        remind_after=cfg.bioauth_remind_after,
-        webapp_base=webapp_base,
-    )
-
-    block_stall = StallDetector(
-        name="block", node=node, first_sync=first_sync,
-        fetch_block=NodeClient.best_block,
-        threshold=cfg.block_stall_threshold,
-        remind_cadence=cfg.block_stall_remind_after,
-        notify=send_text,
-    )
-    finality_stall = StallDetector(
-        name="finality", node=node, first_sync=first_sync,
-        fetch_block=NodeClient.finalized_head,
-        threshold=cfg.finality_stall_threshold,
-        remind_cadence=cfg.finality_stall_remind_after,
-        notify=send_text,
-    )
-
     dp = Dispatcher()
     dp.include_router(build_router(
         chat_id=cfg.telegram_user_id,
@@ -149,10 +126,37 @@ async def main() -> int:
         name="telegram-polling",
     )
     first_sync_task = asyncio.create_task(first_sync.run(), name="first-sync")
-    bioauth_task = asyncio.create_task(bioauth.run(), name="bioauth")
-    block_task = asyncio.create_task(block_stall.run(), name="block-stall")
-    finality_task = asyncio.create_task(finality_stall.run(), name="finality-stall")
-    tasks = [polling_task, first_sync_task, bioauth_task, block_task, finality_task]
+    tasks = [polling_task, first_sync_task]
+
+    if cfg.bioauth_remind_before and cfg.bioauth_remind_after:
+        bioauth = BioauthScheduler(
+            node=node, tunnel=tunnel, first_sync=first_sync,
+            send_photo=send_photo, send_text=send_text,
+            remind_before=cfg.bioauth_remind_before,
+            remind_after=cfg.bioauth_remind_after,
+            webapp_base=webapp_base,
+        )
+        tasks.append(asyncio.create_task(bioauth.run(), name="bioauth"))
+
+    if cfg.block_stall_threshold and cfg.block_stall_remind_after:
+        block_stall = StallDetector(
+            name="block", node=node, first_sync=first_sync,
+            fetch_block=NodeClient.best_block,
+            threshold=cfg.block_stall_threshold,
+            remind_cadence=cfg.block_stall_remind_after,
+            notify=send_text,
+        )
+        tasks.append(asyncio.create_task(block_stall.run(), name="block-stall"))
+
+    if cfg.finality_stall_threshold and cfg.finality_stall_remind_after:
+        finality_stall = StallDetector(
+            name="finality", node=node, first_sync=first_sync,
+            fetch_block=NodeClient.finalized_head,
+            threshold=cfg.finality_stall_threshold,
+            remind_cadence=cfg.finality_stall_remind_after,
+            notify=send_text,
+        )
+        tasks.append(asyncio.create_task(finality_stall.run(), name="finality-stall"))
 
     stop = asyncio.Event()
 
