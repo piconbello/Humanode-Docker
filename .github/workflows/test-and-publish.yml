@@ -4,6 +4,11 @@ on:
   pull_request:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'docker-compose.yml'
+      - '.env.example'
 
 jobs:
   bot-unit-tests:
@@ -100,7 +105,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
@@ -110,11 +115,13 @@ jobs:
         id: version
         run: |
           VERSION="$(tr -d '[:space:]' < artifacts/humanode-version.txt)"
-          N=$(( $(git log --format=%H -- artifacts/humanode-version.txt \
-                    | while read sha; do
-                        val="$(git show "$sha:artifacts/humanode-version.txt" 2>/dev/null | tr -d '[:space:]')"
-                        [ "$val" = "$VERSION" ] && echo "$sha"
-                      done | wc -l) + 1 ))
+          LAST_VER_COMMIT="$(git log -1 --format=%H -- artifacts/humanode-version.txt)"
+          if [ -z "$LAST_VER_COMMIT" ]; then
+            echo "::error::artifacts/humanode-version.txt has no git history"
+            exit 1
+          fi
+          N=$(( $(git rev-list --count "${LAST_VER_COMMIT}..HEAD" \
+                    -- . ':!**/*.md' ':!docs/**' ':!docker-compose.yml' ':!.env.example') + 1 ))
           echo "upstream=$VERSION" >> "$GITHUB_OUTPUT"
           echo "internal=${VERSION}-r${N}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
@@ -123,47 +130,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Lowercase repository name
-        id: repo
-        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - name: Build + push (linux/amd64)
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
           push: true
-          provenance: false
           tags: |
-            ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.internal }}
-            ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.upstream }}
-            ghcr.io/${{ steps.repo.outputs.name }}:latest
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ steps.version.outputs.internal }}"
-          gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 && exit 0
-
-          PREV_TAG=$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)
-
-          if [ -n "$PREV_TAG" ]; then
-            CHANGELOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges)
-          else
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
-          fi
-
-          NOTES="## Docker image
-          \`\`\`
-          docker pull ghcr.io/${{ steps.repo.outputs.name }}:$TAG
-          \`\`\`
-
-          **Tags:** \`$TAG\` · \`${{ steps.version.outputs.upstream }}\` · \`latest\`
-
-          ## Changelog
-          ${CHANGELOG}"
-
-          gh release create "$TAG" \
-            --repo "${{ github.repository }}" \
-            --title "$TAG" \
-            --notes "$NOTES" \
-            --latest
+            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.internal }}
+            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.upstream }}
+            ghcr.io/${{ github.repository }}:latest

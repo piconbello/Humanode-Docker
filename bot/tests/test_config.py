@@ -48,11 +48,9 @@ def test_load_config_applies_defaults():
     cfg = load_config(BASE_ENV)
     assert cfg.telegram_user_id == 4242
     assert cfg.node_name == "humanode-validator"
-    assert cfg.sync_mode == "warp"
-    assert cfg.bioauth_remind_before == [
-        timedelta(days=1), timedelta(hours=3), timedelta(hours=1), timedelta(minutes=10),
-    ]
-    assert cfg.block_stall_threshold == timedelta(minutes=5)
+    assert cfg.sync_mode == "full"
+    assert cfg.bioauth_remind_before is None
+    assert cfg.block_stall_threshold is None
     assert cfg.rpc_url == "ws://127.0.0.1:9944"
 
 

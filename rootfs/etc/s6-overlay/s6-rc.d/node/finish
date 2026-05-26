@@ -1,1 +1,4 @@
+#!/command/execlineb -S1
+# When the node exits, halt the entire supervision tree so the container exits.
+# humanode-peer is the primary, un-restartable process (R25).
 s6-svscanctl -t /run/service

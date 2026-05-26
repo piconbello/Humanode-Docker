@@ -1,6 +1,13 @@
 #!/command/execlineb -P
 
 with-contenv
+importas -D "" ENABLE_BOT ENABLE_BOT
+
+ifelse { eltest -z ${ENABLE_BOT} }
+{
+  if { s6-echo "bot: disabled (set ENABLE_BOT=true to enable)" }
+  sleep infinity
+}
 
 fdmove -c 2 1
 s6-setuidgid botuser
