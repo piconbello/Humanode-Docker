@@ -12,7 +12,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Detect latest upstream tag
         id: detect
@@ -35,7 +35,7 @@ jobs:
 
       - name: Open or update PR
         if: steps.detect.outputs.upstream_tag != steps.detect.outputs.current_tag
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(upstream): bump to ${{ steps.detect.outputs.upstream_tag }}"
           title: "chore(upstream): bump to ${{ steps.detect.outputs.upstream_tag }} [automated]"
