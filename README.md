@@ -12,7 +12,7 @@ Single-container Docker image running a Humanode mainnet node.
 | Variable | Default | Description |
 |---|---|---|
 | `SYNC_MODE` | `full` | Sync strategy: `full`, `warp`, `fast`, `fast-unsafe`. |
-| `NODE_NAME` | auto-generated | Display name on the network. Auto-generates `HND-<word>-<hex>` if unset. |
+| `NODE_NAME` | auto-generated | Suffix for the network display name. Always prefixed with `HND-`. Auto-generates `HND-<word>-<hex>` if unset; setting `NODE_NAME=mynode` produces `HND-mynode`. |
 
 ## Deploy
 
