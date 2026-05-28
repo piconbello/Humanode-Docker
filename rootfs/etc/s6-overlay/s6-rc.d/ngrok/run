@@ -1,0 +1,45 @@
+#!/command/with-contenv sh
+set -eu
+
+if [ -z "${NGROK_AUTHTOKEN:-}" ]; then
+    echo "ngrok: disabled (set NGROK_AUTHTOKEN to enable)"
+    exec sleep infinity
+fi
+
+echo "ngrok: waiting for node RPC on 127.0.0.1:9944..."
+until curl -sS -o /dev/null -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}' \
+    http://127.0.0.1:9944 2>/dev/null; do
+    sleep 2
+done
+echo "ngrok: node RPC is up"
+
+export NGROK_AUTHTOKEN
+ngrok-real http 9944 \
+    --log stdout --log-format logfmt \
+    --traffic-policy-file /etc/ngrok/policy.yml &
+NGROK_PID=$!
+
+TUNNEL_URL=""
+for i in $(seq 1 30); do
+    TUNNEL_URL=$(curl -sS http://127.0.0.1:4040/api/tunnels 2>/dev/null \
+        | python3 -c 'import sys,json; ts=json.load(sys.stdin).get("tunnels",[]); print(next((t["public_url"] for t in ts if t["public_url"].startswith("https://")), ""))' 2>/dev/null) || true
+    if [ -n "$TUNNEL_URL" ]; then
+        break
+    fi
+    sleep 1
+done
+
+if [ -n "$TUNNEL_URL" ]; then
+    WS_URL="wss://${TUNNEL_URL#https://}"
+    WEBAPP="https://webapp.mainnet.stages.humanode.io/open?url=${WS_URL}"
+    echo "================================================================"
+    echo "ngrok: tunnel active"
+    echo "ngrok: wss endpoint: ${WS_URL}"
+    echo "ngrok: bioauth link: ${WEBAPP}"
+    echo "================================================================"
+else
+    echo "ngrok: WARNING — tunnel started but could not resolve public URL"
+fi
+
+wait "$NGROK_PID"

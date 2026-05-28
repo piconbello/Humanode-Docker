@@ -36,10 +36,18 @@ class NgrokTunnel:
         self._rpc_port = rpc_port
         self._process: asyncio.subprocess.Process | None = None
         self._public_url: str | None = None
+        self._external: bool = False
         self._log_tail: list[str] = []
 
     async def start(self) -> str:
         if self._public_url:
+            return self._public_url
+
+        existing = await self._detect_existing_tunnel()
+        if existing:
+            self._public_url = "wss://" + existing[len("https://"):]
+            self._external = True
+            logger.info("ngrok tunnel found (managed by s6 service)")
             return self._public_url
 
         env = os.environ.copy()
@@ -62,8 +70,23 @@ class NgrokTunnel:
             raise
 
         self._public_url = "wss://" + public_https[len("https://"):]
-        logger.info("ngrok tunnel opened")
+        self._external = False
+        logger.info("ngrok tunnel opened (managed by bot)")
         return self._public_url
+
+    async def _detect_existing_tunnel(self) -> str | None:
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as session:
+                async with session.get(NGROK_API) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for t in data.get("tunnels", []):
+                            url = t.get("public_url", "")
+                            if url.startswith("https://"):
+                                return url
+        except (aiohttp.ClientError, TimeoutError, OSError):
+            pass
+        return None
 
     async def _wait_for_tunnel_url(self) -> str:
         deadline = asyncio.get_event_loop().time() + NGROK_START_TIMEOUT_S
@@ -120,8 +143,10 @@ class NgrokTunnel:
         return self._public_url
 
     async def cancel(self) -> None:
-        await self._kill_process()
+        if not self._external:
+            await self._kill_process()
         self._public_url = None
+        self._external = False
         self._log_tail.clear()
 
     async def _kill_process(self) -> None:
