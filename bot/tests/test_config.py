@@ -14,7 +14,6 @@ from hmnd_bot.config import (
 BASE_ENV = {
     "TELEGRAM_BOT_TOKEN": "123456:ABCDEF_placeholder_token_value_xxxxxxx",
     "TELEGRAM_USER_ID": "4242",
-    "NGROK_AUTHTOKEN": "2abcDEFghiJKLmnoPQRstuVWXyz1234567890ABCDEF_ngrok",
 }
 
 
@@ -78,6 +77,17 @@ def test_load_config_rejects_bad_sync_mode():
 def test_load_config_accepts_full_sync():
     cfg = load_config({**BASE_ENV, "SYNC_MODE": "full"})
     assert cfg.sync_mode == "full"
+
+
+def test_load_config_ngrok_authtoken_optional():
+    cfg = load_config(BASE_ENV)
+    assert cfg.ngrok_authtoken == ""
+
+
+def test_load_config_ngrok_authtoken_when_set():
+    env = {**BASE_ENV, "NGROK_AUTHTOKEN": "tok_test"}
+    cfg = load_config(env)
+    assert cfg.ngrok_authtoken == "tok_test"
 
 
 def test_config_is_frozen():

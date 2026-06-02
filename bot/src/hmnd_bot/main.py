@@ -53,7 +53,7 @@ async def main() -> int:
         return 1
 
     redaction = configure_logging()
-    redaction.register_many([cfg.telegram_bot_token, cfg.ngrok_authtoken])
+    redaction.register_many([s for s in [cfg.telegram_bot_token, cfg.ngrok_authtoken] if s])
 
     logger.info("starting hmnd_bot")
 

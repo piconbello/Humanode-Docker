@@ -82,7 +82,7 @@ def load_config(env: dict[str, str] | None = None) -> Config:
 
     telegram_bot_token = _require(e, "TELEGRAM_BOT_TOKEN")
     telegram_user_id_str = _require(e, "TELEGRAM_USER_ID")
-    ngrok_authtoken = _require(e, "NGROK_AUTHTOKEN")
+    ngrok_authtoken = e.get("NGROK_AUTHTOKEN", "").strip()
 
     try:
         telegram_user_id = int(telegram_user_id_str)

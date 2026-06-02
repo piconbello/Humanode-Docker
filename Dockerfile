@@ -26,6 +26,11 @@ RUN curl -fsSL -o /tmp/ngrok.tgz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-s
     && install -m 0755 /tmp/ngrok /usr/local/bin/ngrok-real \
     && rm /tmp/ngrok.tgz /tmp/ngrok
 
+RUN curl -fsSL -o /tmp/hmnd-tunnel \
+        https://chainspec.mainnet.stages.humanode.io/latest/binaries/Linux-x86_64/humanode-websocket-tunnel-client \
+    && install -m 0755 /tmp/hmnd-tunnel /usr/local/bin/humanode-websocket-tunnel-client \
+    && rm /tmp/hmnd-tunnel
+
 COPY artifacts/humanode-version.txt /build/humanode-version.txt
 COPY build/fetch-upstream.sh /build/fetch-upstream.sh
 RUN chmod +x /build/fetch-upstream.sh && /build/fetch-upstream.sh \
@@ -61,6 +66,7 @@ COPY --from=build /etc/s6-overlay /etc/s6-overlay
 COPY --from=build /usr/local/bin/humanode-peer /usr/local/bin/humanode-peer
 COPY --from=build /etc/humanode/chainspec.json /etc/humanode/chainspec.json
 COPY --from=build /usr/local/bin/ngrok-real /usr/local/bin/ngrok-real
+COPY --from=build /usr/local/bin/humanode-websocket-tunnel-client /usr/local/bin/humanode-websocket-tunnel-client
 COPY --from=build /usr/local/lib/python3.12 /usr/local/lib/python3.12
 
 RUN groupadd --system --gid 1100 hmnd \
@@ -73,7 +79,7 @@ COPY rootfs/ /
 RUN chmod 0755 /entrypoint.sh /usr/local/bin/insert-key.sh \
     && chmod 0755 /etc/s6-overlay/s6-rc.d/node/run /etc/s6-overlay/s6-rc.d/node/finish \
     && chmod 0755 /etc/s6-overlay/s6-rc.d/bot/run \
-    && chmod 0755 /etc/s6-overlay/s6-rc.d/ngrok/run
+    && chmod 0755 /etc/s6-overlay/s6-rc.d/tunnel/run
 
 VOLUME ["/data"]
 

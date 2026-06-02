@@ -18,15 +18,14 @@ docker compose logs -f humanode
 
 ## Run a validator
 
-A validator needs an [ngrok](https://ngrok.com) auth token (free tier works)
-and your session-key seed mnemonic (**not** your stash/controller seed — session
-keys only).
+You need your session-key seed mnemonic (**not** your stash/controller seed —
+session keys only).
 
-1. **Set your ngrok token and start the node.**
+1. **Enable validator mode and start the node.**
 
    ```sh
    cp .env.example .env
-   # set NGROK_AUTHTOKEN in .env
+   # set VALIDATOR=true in .env
    docker compose up -d
    ```
 
@@ -43,13 +42,16 @@ keys only).
 
    The seed never enters shell history, process argv, or the runtime container.
 
-3. **Complete bioauth.** The ngrok tunnel prints the bioauth link to the logs:
+3. **Complete bioauth.** The tunnel prints the bioauth link to the logs:
 
    ```sh
    docker compose logs humanode 2>&1 | grep 'bioauth link:'
    ```
 
    Open that URL in a browser, scan your face, done.
+
+   By default the built-in Humanode WebSocket Tunnel is used (no account needed).
+   If you prefer [ngrok](https://ngrok.com), set `NGROK_AUTHTOKEN` in `.env`.
 
 ## Finding your node name
 
@@ -70,4 +72,5 @@ You can look up your node on the [Humanode Telemetry](https://telemetry.humanode
 |---|---|---|
 | `SYNC_MODE` | `full` | Sync strategy: `full`, `warp`, `fast`, `fast-unsafe`. |
 | `NODE_NAME` | auto-generated | Suffix for the display name. Always prefixed with `HND-`. |
-| `NGROK_AUTHTOKEN` | _(empty)_ | [ngrok](https://ngrok.com) auth token. Required for bioauth. |
+| `VALIDATOR` | `false` | Set to `true` to enable validator mode and bioauth tunnel. |
+| `NGROK_AUTHTOKEN` | _(empty)_ | [ngrok](https://ngrok.com) auth token. When set, uses ngrok instead of the default Humanode tunnel. Only applies when `VALIDATOR=true`. |
