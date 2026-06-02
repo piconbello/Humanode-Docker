@@ -25,7 +25,7 @@ session keys only).
 
    ```sh
    cp .env.example .env
-   # set VALIDATOR=true in .env
+   sed -i 's/^#VALIDATOR=true/VALIDATOR=true/' .env
    docker compose up -d
    ```
 
