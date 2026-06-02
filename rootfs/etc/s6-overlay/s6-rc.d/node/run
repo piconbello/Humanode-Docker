@@ -3,16 +3,17 @@ set -eu
 
 NODE_NAME="${NODE_NAME:-humanode-validator}"
 SYNC_MODE="${SYNC_MODE:-full}"
+VALIDATOR="${VALIDATOR:-false}"
 
-VALIDATOR_FLAG=""
-if find /data/chains -type f -path '*/keystore/6b626169*' 2>/dev/null | grep -q .; then
-    VALIDATOR_FLAG="--validator"
+VALIDATOR_ARGS=""
+if [ "$VALIDATOR" = "true" ]; then
+    VALIDATOR_ARGS="--validator --rpc-url-ngrok-detect"
 fi
 
 exec 2>&1
 exec s6-setuidgid hmnd \
     humanode-peer \
-        ${VALIDATOR_FLAG} \
+        $VALIDATOR_ARGS \
         --chain /etc/humanode/chainspec.json \
         --base-path /data \
         --name "${NODE_NAME}" \

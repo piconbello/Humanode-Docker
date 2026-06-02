@@ -47,6 +47,10 @@ echo "check: humanode-peer --version exits 0"
 docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'humanode-peer --version' > /dev/null \
     || fail "humanode-peer --version failed"
 
+echo "check: humanode-websocket-tunnel-client is present and executable"
+docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -x /usr/local/bin/humanode-websocket-tunnel-client' \
+    || fail "humanode-websocket-tunnel-client missing or not executable"
+
 echo "check: only 30333/tcp is declared by the image"
 EXPOSED="$(docker inspect "$IMAGE" --format '{{range $p, $_ := .Config.ExposedPorts}}{{$p}} {{end}}' | tr -d '[:space:]')"
 if [ "$EXPOSED" != "30333/tcp" ]; then

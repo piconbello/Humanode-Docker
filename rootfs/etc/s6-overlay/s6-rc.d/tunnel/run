@@ -1,0 +1,57 @@
+#!/command/with-contenv sh
+set -eu
+
+if [ "${VALIDATOR:-false}" != "true" ]; then
+    echo "tunnel: disabled (VALIDATOR is not true)"
+    exec sleep infinity
+fi
+
+echo "tunnel: waiting for node RPC on 127.0.0.1:9944..."
+until curl -sS -o /dev/null -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}' \
+    http://127.0.0.1:9944 2>/dev/null; do
+    sleep 2
+done
+echo "tunnel: node RPC is up"
+
+if [ -n "${NGROK_AUTHTOKEN:-}" ]; then
+    echo "tunnel: using ngrok (NGROK_AUTHTOKEN is set)"
+    export NGROK_AUTHTOKEN
+    ngrok-real http 9944 \
+        --log stdout --log-format logfmt \
+        --traffic-policy-file /etc/ngrok/policy.yml &
+    TUNNEL_PID=$!
+    TUNNEL_TYPE="ngrok"
+else
+    echo "tunnel: using humanode-websocket-tunnel (default)"
+    TUNNEL_SERVER_ADDR="main.ws-tunnel.humanode.io:8000" \
+    TUNNEL_SERVER_IP_FAMILY="IPv4" \
+    TARGET_URL="ws://127.0.0.1:9944" \
+    humanode-websocket-tunnel-client &
+    TUNNEL_PID=$!
+    TUNNEL_TYPE="humanode-ws-tunnel"
+fi
+
+TUNNEL_URL=""
+for i in $(seq 1 30); do
+    TUNNEL_URL=$(curl -sS http://127.0.0.1:4040/api/tunnels 2>/dev/null \
+        | python3 -c 'import sys,json; ts=json.load(sys.stdin).get("tunnels",[]); print(next((t["public_url"] for t in ts if t["public_url"].startswith("https://")), ""))' 2>/dev/null) || true
+    if [ -n "$TUNNEL_URL" ]; then
+        break
+    fi
+    sleep 1
+done
+
+if [ -n "$TUNNEL_URL" ]; then
+    WS_URL="wss://${TUNNEL_URL#https://}"
+    WEBAPP="https://webapp.mainnet.stages.humanode.io/open?url=${WS_URL}"
+    echo "================================================================"
+    echo "tunnel ($TUNNEL_TYPE): active"
+    echo "tunnel: wss endpoint: ${WS_URL}"
+    echo "tunnel: bioauth link: ${WEBAPP}"
+    echo "================================================================"
+else
+    echo "tunnel ($TUNNEL_TYPE): WARNING — started but could not resolve public URL"
+fi
+
+wait "$TUNNEL_PID"
