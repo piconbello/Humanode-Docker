@@ -74,3 +74,6 @@ You can look up your node on the [Humanode Telemetry](https://telemetry.humanode
 | `NODE_NAME` | auto-generated | Suffix for the display name. Always prefixed with `HND-`. |
 | `VALIDATOR` | `false` | Set to `true` to enable validator mode and bioauth tunnel. |
 | `NGROK_AUTHTOKEN` | _(empty)_ | [ngrok](https://ngrok.com) auth token. When set, uses ngrok instead of the default Humanode tunnel. Only applies when `VALIDATOR=true`. |
+| `DB_CACHE` | `256` | Database cache size in MiB. Limits RocksDB memory usage. |
+| `STATE_PRUNING` | _(binary default: 256)_ | State pruning mode: `archive`, `archive-canonical`, or a number of blocks to keep. Can only be set on first run. |
+| `BLOCKS_PRUNING` | _(binary default: archive-canonical)_ | Block pruning mode: `archive`, `archive-canonical`, or a number of blocks to keep. |

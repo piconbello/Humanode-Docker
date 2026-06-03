@@ -4,10 +4,19 @@ set -eu
 NODE_NAME="${NODE_NAME:-humanode-validator}"
 SYNC_MODE="${SYNC_MODE:-full}"
 VALIDATOR="${VALIDATOR:-false}"
+DB_CACHE="${DB_CACHE:-256}"
 
 VALIDATOR_ARGS=""
 if [ "$VALIDATOR" = "true" ]; then
     VALIDATOR_ARGS="--validator --rpc-url-ngrok-detect"
+fi
+
+PRUNING_ARGS=""
+if [ -n "${STATE_PRUNING:-}" ]; then
+    PRUNING_ARGS="--state-pruning ${STATE_PRUNING}"
+fi
+if [ -n "${BLOCKS_PRUNING:-}" ]; then
+    PRUNING_ARGS="${PRUNING_ARGS} --blocks-pruning ${BLOCKS_PRUNING}"
 fi
 
 exec 2>&1
@@ -20,4 +29,6 @@ exec s6-setuidgid hmnd \
         --rpc-port 9944 \
         --rpc-cors all \
         --sync "${SYNC_MODE}" \
-        --port 30333
+        --port 30333 \
+        --db-cache "${DB_CACHE}" \
+        ${PRUNING_ARGS}
