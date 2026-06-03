@@ -120,7 +120,7 @@ jobs:
             echo "::error::artifacts/humanode-version.txt has no git history"
             exit 1
           fi
-          N=$(( $(git rev-list --count "${LAST_VER_COMMIT}..HEAD" \
+          N=$(( $(git rev-list --count --first-parent "${LAST_VER_COMMIT}..HEAD" \
                     -- . ':!**/*.md' ':!docs/**' ':!docker-compose.yml' ':!.env.example') + 1 ))
           echo "upstream=$VERSION" >> "$GITHUB_OUTPUT"
           echo "internal=${VERSION}-r${N}" >> "$GITHUB_OUTPUT"

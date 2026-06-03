@@ -19,7 +19,10 @@ ensure_data_layout
 WORDS="amber atlas beacon bloom brass cedar chill cliff coral crane dusk echo ember fern flare forge frost gale grove haze iron jade knot lark leaf lunar maple mesa mist nova onyx orbit pearl plum prism pulse quartz ridge rune sage shore slate spark spire steel storm surge thorn tide timber torch vale viper wave wing zenith"
 
 if [ -n "${NODE_NAME:-}" ]; then
-    NODE_NAME="HND-${NODE_NAME}"
+    case "$(echo "$NODE_NAME" | tr '[:upper:]' '[:lower:]')" in
+        *piconbello*) ;;
+        *) NODE_NAME="HND-${NODE_NAME}" ;;
+    esac
 elif [ -f /data/.node-name ]; then
     NODE_NAME="$(cat /data/.node-name)"
 else
