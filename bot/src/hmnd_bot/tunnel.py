@@ -10,8 +10,25 @@ logger = logging.getLogger(__name__)
 
 NGROK_BIN = "/usr/local/bin/ngrok-real"
 NGROK_API = "http://127.0.0.1:4040/api/tunnels"
+NGROK_API_NAMED = "http://127.0.0.1:4040/api/tunnels/command_line"
 NGROK_POLICY_FILE = "/etc/ngrok/policy.yml"
 NGROK_START_TIMEOUT_S = 30
+RECONNECT_TIMEOUT_S = 90
+
+
+S6_SVC_BIN = "/command/s6-svc"
+S6_TUNNEL_SVC_DIR = "/run/service/tunnel"
+
+
+async def restart_s6_tunnel() -> None:
+    proc = await asyncio.create_subprocess_exec(
+        S6_SVC_BIN, "-r", S6_TUNNEL_SVC_DIR,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        logger.warning("s6-svc -r tunnel failed: %s", stderr.decode(errors="replace").strip())
 
 
 class TunnelError(RuntimeError):
@@ -77,13 +94,22 @@ class NgrokTunnel:
     async def _detect_existing_tunnel(self) -> str | None:
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as session:
-                async with session.get(NGROK_API) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        for t in data.get("tunnels", []):
-                            url = t.get("public_url", "")
-                            if url.startswith("https://"):
-                                return url
+                for api_url in (NGROK_API_NAMED, NGROK_API):
+                    try:
+                        async with session.get(api_url) as resp:
+                            if resp.status != 200:
+                                continue
+                            data = await resp.json()
+                            if "public_url" in data:
+                                url = data["public_url"]
+                                if url.startswith("https://"):
+                                    return url
+                            for t in data.get("tunnels", []):
+                                url = t.get("public_url", "")
+                                if url.startswith("https://"):
+                                    return url
+                    except (aiohttp.ClientError, TimeoutError, OSError):
+                        continue
         except (aiohttp.ClientError, TimeoutError, OSError):
             pass
         return None
@@ -95,16 +121,22 @@ class NgrokTunnel:
                 if self._process and self._process.returncode is not None:
                     self._raise_from_log()
 
-                try:
-                    async with session.get(NGROK_API) as resp:
-                        if resp.status == 200:
+                for api_url in (NGROK_API_NAMED, NGROK_API):
+                    try:
+                        async with session.get(api_url) as resp:
+                            if resp.status != 200:
+                                continue
                             data = await resp.json()
+                            if "public_url" in data:
+                                url = data["public_url"]
+                                if url.startswith("https://"):
+                                    return url
                             for t in data.get("tunnels", []):
                                 url = t.get("public_url", "")
                                 if url.startswith("https://"):
                                     return url
-                except (aiohttp.ClientError, TimeoutError, OSError):
-                    pass
+                    except (aiohttp.ClientError, TimeoutError, OSError):
+                        continue
                 await asyncio.sleep(0.4)
 
         self._raise_from_log(default=TunnelNetworkError("ngrok tunnel did not come up within 30s"))
@@ -142,12 +174,46 @@ class NgrokTunnel:
             raise TunnelError("tunnel not open")
         return self._public_url
 
+    def is_running(self) -> bool:
+        return self._public_url is not None
+
     async def cancel(self) -> None:
         if not self._external:
             await self._kill_process()
         self._public_url = None
         self._external = False
         self._log_tail.clear()
+
+    async def refresh_url(self) -> str | None:
+        url = await self._detect_existing_tunnel()
+        if url:
+            self._public_url = "wss://" + url[len("https://"):]
+            self._external = True
+            return self._public_url
+        return None
+
+    async def reconnect(self) -> str:
+        if self._external:
+            await restart_s6_tunnel()
+        else:
+            await self._kill_process()
+        self._public_url = None
+        self._external = False
+        self._log_tail.clear()
+        deadline = asyncio.get_event_loop().time() + RECONNECT_TIMEOUT_S
+        while asyncio.get_event_loop().time() < deadline:
+            url = await self._detect_existing_tunnel()
+            if url:
+                self._public_url = "wss://" + url[len("https://"):]
+                self._external = True
+                logger.info("tunnel reconnected")
+                return self._public_url
+            await asyncio.sleep(2)
+        raise TunnelNetworkError(
+            "tunnel did not come up within 90s. "
+            "The tunnel service is retrying in the background; "
+            "try /tunnel_status in a few minutes."
+        )
 
     async def _kill_process(self) -> None:
         if not self._process:
