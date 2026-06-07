@@ -79,13 +79,16 @@ def build_router(
 
     @router.message(Command("tunnel_status", "tunnel-status"))
     async def handle_tunnel_status(message: Message) -> None:
-        if not tunnel.is_running():
-            await message.answer("Tunnel: not running. Use /link to start.")
-            return
-        try:
-            url = tunnel.url()
-            await message.answer(f"Tunnel: active\nURL: {url}")
-        except TunnelError:
+        live_url = await tunnel.refresh_url()
+        if live_url:
+            await message.answer(f"Tunnel: active\nURL: {live_url}")
+        elif tunnel.is_running():
+            await message.answer(
+                "Tunnel: service running but no URL detected.\n"
+                "The relay may have rejected the connection. "
+                "The service is retrying automatically."
+            )
+        else:
             await message.answer("Tunnel: not running. Use /link to start.")
 
     return router

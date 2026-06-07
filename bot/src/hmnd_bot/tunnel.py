@@ -13,6 +13,7 @@ NGROK_API = "http://127.0.0.1:4040/api/tunnels"
 NGROK_API_NAMED = "http://127.0.0.1:4040/api/tunnels/command_line"
 NGROK_POLICY_FILE = "/etc/ngrok/policy.yml"
 NGROK_START_TIMEOUT_S = 30
+RECONNECT_TIMEOUT_S = 90
 
 
 S6_SVC_BIN = "/command/s6-svc"
@@ -183,15 +184,36 @@ class NgrokTunnel:
         self._external = False
         self._log_tail.clear()
 
+    async def refresh_url(self) -> str | None:
+        url = await self._detect_existing_tunnel()
+        if url:
+            self._public_url = "wss://" + url[len("https://"):]
+            self._external = True
+            return self._public_url
+        return None
+
     async def reconnect(self) -> str:
         if self._external:
             await restart_s6_tunnel()
-            self._public_url = None
-            self._external = False
         else:
             await self._kill_process()
+        self._public_url = None
+        self._external = False
         self._log_tail.clear()
-        return await self.start()
+        deadline = asyncio.get_event_loop().time() + RECONNECT_TIMEOUT_S
+        while asyncio.get_event_loop().time() < deadline:
+            url = await self._detect_existing_tunnel()
+            if url:
+                self._public_url = "wss://" + url[len("https://"):]
+                self._external = True
+                logger.info("tunnel reconnected")
+                return self._public_url
+            await asyncio.sleep(2)
+        raise TunnelNetworkError(
+            "tunnel did not come up within 90s. "
+            "The tunnel service is retrying in the background; "
+            "try /tunnel_status in a few minutes."
+        )
 
     async def _kill_process(self) -> None:
         if not self._process:
