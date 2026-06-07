@@ -60,6 +60,32 @@ def build_router(
     @router.message(Command("cancel_tunnel", "cancel-tunnel"))
     async def handle_cancel_tunnel(message: Message) -> None:
         await tunnel.cancel()
-        await message.answer("🔌 Tunnel closed. Next /link will open a fresh one.")
+        await message.answer("Tunnel closed. Next /link will open a fresh one.")
+
+    @router.message(Command("reconnect_tunnel", "reconnect-tunnel"))
+    async def handle_reconnect_tunnel(message: Message) -> None:
+        await message.answer("Restarting tunnel...")
+        try:
+            wss_url = await tunnel.reconnect()
+        except TunnelError as e:
+            await message.answer(f"Tunnel reconnect failed: {e}")
+            return
+        bioauth_url = compose_bioauth_url(wss_url, webapp_base=webapp_base)
+        png = qr_png_bytes(bioauth_url)
+        await message.answer_photo(
+            photo=BufferedInputFile(png, filename="bioauth.png"),
+            caption=f"Tunnel reconnected.\n{bioauth_url}",
+        )
+
+    @router.message(Command("tunnel_status", "tunnel-status"))
+    async def handle_tunnel_status(message: Message) -> None:
+        if not tunnel.is_running():
+            await message.answer("Tunnel: not running. Use /link to start.")
+            return
+        try:
+            url = tunnel.url()
+            await message.answer(f"Tunnel: active\nURL: {url}")
+        except TunnelError:
+            await message.answer("Tunnel: not running. Use /link to start.")
 
     return router

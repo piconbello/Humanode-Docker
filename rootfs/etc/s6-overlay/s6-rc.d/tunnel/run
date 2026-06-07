@@ -32,10 +32,18 @@ else
     TUNNEL_TYPE="humanode-ws-tunnel"
 fi
 
+detect_tunnel_url() {
+    url=$(curl -sS http://127.0.0.1:4040/api/tunnels/command_line 2>/dev/null \
+        | python3 -c 'import sys,json; print(json.load(sys.stdin).get("public_url",""))' 2>/dev/null) || true
+    if [ -n "$url" ]; then echo "$url"; return; fi
+    url=$(curl -sS http://127.0.0.1:4040/api/tunnels 2>/dev/null \
+        | python3 -c 'import sys,json; ts=json.load(sys.stdin).get("tunnels",[]); print(next((t["public_url"] for t in ts if t["public_url"].startswith("https://")), ""))' 2>/dev/null) || true
+    echo "$url"
+}
+
 TUNNEL_URL=""
 for i in $(seq 1 30); do
-    TUNNEL_URL=$(curl -sS http://127.0.0.1:4040/api/tunnels 2>/dev/null \
-        | python3 -c 'import sys,json; ts=json.load(sys.stdin).get("tunnels",[]); print(next((t["public_url"] for t in ts if t["public_url"].startswith("https://")), ""))' 2>/dev/null) || true
+    TUNNEL_URL=$(detect_tunnel_url)
     if [ -n "$TUNNEL_URL" ]; then
         break
     fi

@@ -6,13 +6,13 @@ BASE_PATH="${BASE_PATH:-/data}"
 
 if [ $# -ne 0 ]; then
     echo "error: insert-key accepts seed via stdin only, no arguments" >&2
-    echo "usage: echo \"\$SEED\" | docker run --rm -i -v <vol>:/data <image> insert-key" >&2
+    echo "usage: printf '%s' \"\$SEED\" | docker compose exec -T humanode /usr/local/bin/insert-key.sh" >&2
     exit 1
 fi
 
 if [ -t 0 ]; then
     echo "error: stdin is a TTY; pipe the seed in, do not type it interactively" >&2
-    echo "usage: echo \"\$SEED\" | docker run --rm -i -v <vol>:/data <image> insert-key" >&2
+    echo "usage: printf '%s' \"\$SEED\" | docker compose exec -T humanode /usr/local/bin/insert-key.sh" >&2
     exit 1
 fi
 

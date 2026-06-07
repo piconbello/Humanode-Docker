@@ -69,7 +69,9 @@ async def main() -> int:
             await bot.set_my_commands(
                 commands=[
                     BotCommand(command="link", description="Get a fresh bioauth link + QR"),
-                    BotCommand(command="cancel_tunnel", description="Close the ngrok tunnel"),
+                    BotCommand(command="reconnect_tunnel", description="Restart tunnel with a new URL"),
+                    BotCommand(command="tunnel_status", description="Show tunnel status and URL"),
+                    BotCommand(command="cancel_tunnel", description="Close the tunnel"),
                 ],
                 scope=BotCommandScopeChat(chat_id=cfg.telegram_user_id),
             )
