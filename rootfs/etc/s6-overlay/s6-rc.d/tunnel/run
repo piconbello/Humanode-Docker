@@ -14,6 +14,9 @@ until curl -sS -o /dev/null -H 'Content-Type: application/json' \
 done
 echo "tunnel: node RPC is up"
 
+cleanup() { kill "$TUNNEL_PID" 2>/dev/null; }
+trap cleanup TERM INT
+
 if [ -n "${NGROK_AUTHTOKEN:-}" ]; then
     echo "tunnel: using ngrok (NGROK_AUTHTOKEN is set)"
     export NGROK_AUTHTOKEN

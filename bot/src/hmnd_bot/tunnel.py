@@ -15,12 +15,13 @@ NGROK_POLICY_FILE = "/etc/ngrok/policy.yml"
 NGROK_START_TIMEOUT_S = 30
 
 
-S6_TUNNEL_SVC_DIR = "/run/s6-rc/servicedirs/svc-tunnel"
+S6_SVC_BIN = "/command/s6-svc"
+S6_TUNNEL_SVC_DIR = "/run/service/tunnel"
 
 
 async def restart_s6_tunnel() -> None:
     proc = await asyncio.create_subprocess_exec(
-        "s6-svc", "-r", S6_TUNNEL_SVC_DIR,
+        S6_SVC_BIN, "-r", S6_TUNNEL_SVC_DIR,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
