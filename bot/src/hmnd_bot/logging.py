@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import traceback
 from typing import Iterable
 
 REDACTED = "[REDACTED]"
@@ -10,8 +11,12 @@ _SHAPE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b\d{6,12}:[A-Za-z0-9_-]{35,}\b"),
     re.compile(r"\b(?:[a-z]{3,10}\s+){10,}[a-z]{3,10}\b"),
     re.compile(r"https?://\S*bioauth\S*"),
+    re.compile(r"https?://\S*/open\?url=\S*"),
+    re.compile(r"wss?%3[Aa]%2[Ff]%2[Ff]\S*"),
     re.compile(r"https?://[A-Za-z0-9-]+\.ngrok(?:-free)?\.app\S*"),
     re.compile(r"wss?://[A-Za-z0-9-]+\.ngrok(?:-free)?\.app\S*"),
+    re.compile(r"https?://[A-Za-z0-9.-]+\.ws-tunnel\.humanode\.io\S*"),
+    re.compile(r"wss?://[A-Za-z0-9.-]+\.ws-tunnel\.humanode\.io\S*"),
 )
 
 
@@ -44,6 +49,12 @@ class RedactionFilter(logging.Filter):
                 record.args = {k: self._redact(v) if isinstance(v, str) else v for k, v in record.args.items()}
             elif isinstance(record.args, tuple):
                 record.args = tuple(self._redact(a) if isinstance(a, str) else a for a in record.args)
+        if record.exc_info and record.exc_text is None:
+            record.exc_text = "".join(traceback.format_exception(*record.exc_info))
+        if record.exc_text is not None:
+            record.exc_text = self._redact(record.exc_text)
+        if record.stack_info is not None:
+            record.stack_info = self._redact(record.stack_info)
         return True
 
 

@@ -46,3 +46,27 @@ def test_write_sets_0600_perms(tmp_path: Path):
     state.write_flag(p, "x")
     mode = p.stat().st_mode & 0o777
     assert mode == 0o600
+
+
+def test_clear_flag_removes_existing_file(tmp_path):
+    p = tmp_path / "anchor"
+    state.write_flag(p, "value")
+    assert state.clear_flag(p) is True
+    assert not p.exists()
+
+
+def test_clear_flag_missing_file_is_noop(tmp_path):
+    p = tmp_path / "absent"
+    assert state.clear_flag(p) is False
+
+
+def test_clear_flag_surfaces_other_oserror(tmp_path, monkeypatch):
+    p = tmp_path / "anchor"
+    state.write_flag(p, "value")
+
+    def boom(_path):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(state.os, "unlink", boom)
+    with pytest.raises(PermissionError):
+        state.clear_flag(p)

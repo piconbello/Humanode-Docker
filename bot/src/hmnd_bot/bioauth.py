@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
 from .bioauth_url import compose_bioauth_url
-from .first_sync import FirstSyncWatcher
+from .catchup import CatchupDetector
 from .node import BioauthStatus, NodeClient, NodeUnavailable
 from .tunnel import NgrokTunnel, TunnelAuthFailure, TunnelError, TunnelQuotaExceeded
 from . import state
@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 SLOT_STATE_PATH = "/data/bot-state/.last-delivered-slot"
 
+SYNCING_MESSAGE = "⏳ Node is behind and still syncing. Facescan reminders are paused until it catches up."
+
+SYNCED_MESSAGE = "✅ Node is synced. Facescan reminders have resumed."
+
 
 class BioauthScheduler:
     def __init__(
@@ -22,7 +26,7 @@ class BioauthScheduler:
         *,
         node: NodeClient,
         tunnel: NgrokTunnel,
-        first_sync: FirstSyncWatcher,
+        catchup: CatchupDetector,
         send_photo: Callable[[bytes, str], Awaitable[None]],
         send_text: Callable[[str], Awaitable[None]],
         remind_before: list[timedelta],
@@ -33,7 +37,7 @@ class BioauthScheduler:
     ) -> None:
         self._node = node
         self._tunnel = tunnel
-        self._first_sync = first_sync
+        self._catchup = catchup
         self._send_photo = send_photo
         self._send_text = send_text
         self._remind_before = sorted(remind_before)
@@ -43,19 +47,73 @@ class BioauthScheduler:
         self._tick = tick
 
     async def run(self) -> None:
-        await self._first_sync.wait_complete()
         while True:
             try:
-                await self._evaluate()
+                await self._step(datetime.now(timezone.utc))
             except NodeUnavailable:
                 logger.debug("bioauth: node unavailable; skipping tick")
             except Exception:
                 logger.exception("bioauth tick error")
             await asyncio.sleep(self._tick.total_seconds())
 
-    async def _evaluate(self) -> None:
+    async def _step(self, now: datetime) -> None:
+        await self._flush_notices()
+
+        if self._catchup.pending_entry:
+            await self._enter_hold()
+
+        if self._catchup.pending_exit:
+            await self._exit_hold(now)
+            return
+
+        if self._catchup.is_behind:
+            return
+
+        await self._evaluate(now)
+
+    async def _flush_notices(self) -> None:
+        notices = self._catchup.take_notices()
+        for index, notice in enumerate(notices):
+            if not await self._safe_text(notice):
+                self._catchup.requeue_notices(notices[index:])
+                return
+
+    async def _enter_hold(self) -> None:
+        try:
+            state.clear_flag(self._anchor_path)
+        except OSError:
+            logger.exception("could not clear bioauth anchor; retrying next tick")
+            return
+        if not await self._safe_text(self._syncing_text()):
+            return
+        self._catchup.clear_pending_entry()
+
+    async def _exit_hold(self, now: datetime) -> None:
+        if not await self._safe_text(SYNCED_MESSAGE):
+            return
+        self._catchup.clear_pending_exit()
+        self._write_anchor(now)
         status: BioauthStatus = await self._node.bioauth_status()
-        now = datetime.now(timezone.utc)
+        if self._facescan_due(status, now):
+            await self._deliver(status, now)
+
+    def _syncing_text(self) -> str:
+        lag = self._catchup.lag
+        if lag is None:
+            return SYNCING_MESSAGE
+        return f"{SYNCING_MESSAGE} Currently about {_human(lag)} behind."
+
+    def _facescan_due(self, status: BioauthStatus, now: datetime) -> bool:
+        if not status.is_active or status.expires_at_ms is None:
+            return True
+        expires = datetime.fromtimestamp(status.expires_at_ms / 1000, tz=timezone.utc)
+        remaining = expires - now
+        if remaining <= timedelta(0):
+            return True
+        return remaining <= max(self._remind_before)
+
+    async def _evaluate(self, now: datetime) -> None:
+        status: BioauthStatus = await self._node.bioauth_status()
         slot_id = self._current_slot_id(status, now)
         if slot_id is None:
             return
@@ -93,18 +151,32 @@ class BioauthScheduler:
         extra = int(past_last / tail) if past_last > timedelta() else 0
         return f"{session_key}:post-{idx + extra}"
 
+    @property
+    def _anchor_path(self) -> str:
+        return self._slot_state_path + ".anchor"
+
+    def _read_anchor(self) -> datetime | None:
+        raw = state.read_flag(self._anchor_path)
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+
+    def _write_anchor(self, moment: datetime) -> None:
+        state.write_flag(self._anchor_path, moment.isoformat())
+
     def _inactive_anchor(self, now: datetime) -> datetime:
-        path = self._slot_state_path + ".anchor"
-        raw = state.read_flag(path)
-        if raw:
-            try:
-                return datetime.fromisoformat(raw)
-            except ValueError:
-                pass
-        state.write_flag(path, now.isoformat())
+        existing = self._read_anchor()
+        if existing is not None:
+            return existing
+        self._write_anchor(now)
         return now
 
     async def _deliver(self, status: BioauthStatus, now: datetime) -> bool:
+        if self._catchup.is_behind:
+            return False
         try:
             wss_url = await self._tunnel.start()
         except TunnelAuthFailure:
@@ -117,6 +189,10 @@ class BioauthScheduler:
             await self._safe_text(f"⚠️ Bioauth reminder skipped: tunnel error ({e}).")
             return False
 
+        if self._catchup.is_behind:
+            logger.info("node fell behind while the tunnel was opening; aborting delivery")
+            return False
+
         url = compose_bioauth_url(wss_url, webapp_base=self._webapp_base)
         from .bioauth_url import qr_png_bytes
         png = qr_png_bytes(url)
@@ -127,11 +203,14 @@ class BioauthScheduler:
             logger.exception("bioauth send_photo failed")
             return False
 
-    async def _safe_text(self, text: str) -> None:
+    async def _safe_text(self, text: str) -> bool:
         try:
             await self._send_text(text)
         except Exception:
             logger.exception("bioauth send_text failed")
+            return False
+        return True
+
 
 
 def _label(d: timedelta) -> str:
@@ -143,3 +222,13 @@ def _label(d: timedelta) -> str:
     if s % 60 == 0:
         return f"{s // 60}m"
     return f"{s}s"
+
+def _human(d: timedelta) -> str:
+    total = int(d.total_seconds())
+    if total < 60:
+        return f"{total}s"
+    if total < 3600:
+        return f"{total // 60}m"
+    if total < 86400:
+        return f"{total // 3600}h {(total % 3600) // 60}m"
+    return f"{total // 86400}d {(total % 86400) // 3600}h"

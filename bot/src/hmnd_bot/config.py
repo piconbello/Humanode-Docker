@@ -29,6 +29,16 @@ def parse_duration(s: str) -> timedelta:
     return n * _DURATION_UNITS[unit]
 
 
+def parse_positive_int(s: str) -> int:
+    try:
+        n = int(s.strip())
+    except ValueError as exc:
+        raise ConfigError(f"expected an integer: {s!r}") from exc
+    if n <= 0:
+        raise ConfigError(f"must be positive: {s!r}")
+    return n
+
+
 def parse_duration_list(s: str) -> list[timedelta]:
     parts = [p for p in (x.strip() for x in s.split(",")) if p]
     if not parts:
@@ -49,6 +59,11 @@ class Config:
     block_stall_remind_after: list[timedelta] | None
     finality_stall_threshold: timedelta | None
     finality_stall_remind_after: list[timedelta] | None
+    catchup_max_block_age: timedelta
+    catchup_max_block_gap: int
+    catchup_checkpoints: list[timedelta]
+    catchup_no_progress_after: timedelta
+    catchup_no_progress_remind_after: list[timedelta]
     rpc_url: str = "ws://127.0.0.1:9944"
 
 
@@ -61,7 +76,15 @@ _DEFAULTS: dict[str, str] = {
     "BLOCK_STALL_REMIND_AFTER": "",
     "FINALITY_STALL_THRESHOLD": "",
     "FINALITY_STALL_REMIND_AFTER": "",
+    "CATCHUP_MAX_BLOCK_AGE": "2m",
+    "CATCHUP_MAX_BLOCK_GAP": "20",
+    "CATCHUP_CHECKPOINTS": "1d,6h,1h,15m",
+    "CATCHUP_NO_PROGRESS_AFTER": "30m",
+    "CATCHUP_NO_PROGRESS_REMIND_AFTER": "30m,1h,2h",
 }
+
+_MIN_CATCHUP_BLOCK_AGE = timedelta(seconds=6)
+_MAX_CATCHUP_BLOCK_AGE = timedelta(hours=1)
 
 _VALID_SYNC_MODES = {"warp", "full", "fast", "fast-unsafe"}
 
@@ -93,6 +116,13 @@ def load_config(env: dict[str, str] | None = None) -> Config:
     if sync_mode not in _VALID_SYNC_MODES:
         raise ConfigError(f"SYNC_MODE must be one of {sorted(_VALID_SYNC_MODES)}")
 
+    catchup_max_block_age = parse_duration(_optional(e, "CATCHUP_MAX_BLOCK_AGE"))
+    if not _MIN_CATCHUP_BLOCK_AGE <= catchup_max_block_age <= _MAX_CATCHUP_BLOCK_AGE:
+        raise ConfigError(
+            "CATCHUP_MAX_BLOCK_AGE must be between "
+            f"{_MIN_CATCHUP_BLOCK_AGE} and {_MAX_CATCHUP_BLOCK_AGE}"
+        )
+
     return Config(
         telegram_bot_token=telegram_bot_token,
         telegram_user_id=telegram_user_id,
@@ -105,4 +135,11 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         block_stall_remind_after=parse_duration_list(v) if (v := _optional(e, "BLOCK_STALL_REMIND_AFTER")) else None,
         finality_stall_threshold=parse_duration(v) if (v := _optional(e, "FINALITY_STALL_THRESHOLD")) else None,
         finality_stall_remind_after=parse_duration_list(v) if (v := _optional(e, "FINALITY_STALL_REMIND_AFTER")) else None,
+        catchup_max_block_age=catchup_max_block_age,
+        catchup_max_block_gap=parse_positive_int(_optional(e, "CATCHUP_MAX_BLOCK_GAP")),
+        catchup_checkpoints=parse_duration_list(_optional(e, "CATCHUP_CHECKPOINTS")),
+        catchup_no_progress_after=parse_duration(_optional(e, "CATCHUP_NO_PROGRESS_AFTER")),
+        catchup_no_progress_remind_after=parse_duration_list(
+            _optional(e, "CATCHUP_NO_PROGRESS_REMIND_AFTER")
+        ),
     )

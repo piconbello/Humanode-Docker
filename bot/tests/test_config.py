@@ -95,3 +95,53 @@ def test_config_is_frozen():
     with pytest.raises(Exception):
         cfg.node_name = "hacked"
     assert isinstance(cfg, Config)
+
+
+def test_catchup_defaults():
+    cfg = load_config(BASE_ENV)
+    assert cfg.catchup_max_block_age == timedelta(minutes=2)
+    assert cfg.catchup_max_block_gap == 20
+
+
+def test_catchup_notification_defaults():
+    cfg = load_config(BASE_ENV)
+    assert cfg.catchup_checkpoints == [
+        timedelta(days=1), timedelta(hours=6), timedelta(hours=1), timedelta(minutes=15)
+    ]
+    assert cfg.catchup_no_progress_after == timedelta(minutes=30)
+    assert cfg.catchup_no_progress_remind_after == [
+        timedelta(minutes=30), timedelta(hours=1), timedelta(hours=2)
+    ]
+
+
+def test_catchup_overrides():
+    cfg = load_config({**BASE_ENV, "CATCHUP_MAX_BLOCK_AGE": "45s", "CATCHUP_MAX_BLOCK_GAP": "100"})
+    assert cfg.catchup_max_block_age == timedelta(seconds=45)
+    assert cfg.catchup_max_block_gap == 100
+
+
+
+
+def test_catchup_max_block_age_above_ceiling_rejected():
+    with pytest.raises(ConfigError):
+        load_config({**BASE_ENV, "CATCHUP_MAX_BLOCK_AGE": "30d"})
+
+
+def test_catchup_max_block_age_below_floor_rejected():
+    with pytest.raises(ConfigError):
+        load_config({**BASE_ENV, "CATCHUP_MAX_BLOCK_AGE": "1s"})
+
+
+def test_catchup_max_block_gap_rejects_non_integer():
+    with pytest.raises(ConfigError):
+        load_config({**BASE_ENV, "CATCHUP_MAX_BLOCK_GAP": "twenty"})
+
+
+def test_catchup_max_block_gap_rejects_zero():
+    with pytest.raises(ConfigError):
+        load_config({**BASE_ENV, "CATCHUP_MAX_BLOCK_GAP": "0"})
+
+
+def test_catchup_checkpoints_reject_malformed():
+    with pytest.raises(ConfigError):
+        load_config({**BASE_ENV, "CATCHUP_CHECKPOINTS": "1d,banana"})
