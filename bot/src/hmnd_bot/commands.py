@@ -10,7 +10,7 @@ from aiogram.types import BufferedInputFile, Message
 from .bioauth_url import compose_bioauth_url, qr_png_bytes
 from .catchup import CatchupDetector
 from .node import NodeClient, NodeUnavailable
-from .tunnel import NgrokTunnel, TunnelAuthFailure, TunnelQuotaExceeded, TunnelError
+from .tunnel import Tunnel, TunnelAuthFailure, TunnelQuotaExceeded, TunnelError, TunnelState
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ def build_router(
     *,
     chat_id: int,
     node: NodeClient,
-    tunnel: NgrokTunnel,
+    tunnel: Tunnel,
     catchup: CatchupDetector,
     webapp_base: str,
 ) -> Router:
@@ -59,6 +59,12 @@ def build_router(
 
     @router.message(Command("cancel_tunnel", "cancel-tunnel"))
     async def handle_cancel_tunnel(message: Message) -> None:
+        if not tunnel.supports_cancel:
+            await message.answer(
+                "The native tunnel is a supervised service and cannot be closed from here. "
+                "Use /reconnect_tunnel to restart it."
+            )
+            return
         await tunnel.cancel()
         await message.answer("Tunnel closed. Next /link will open a fresh one.")
 
@@ -79,17 +85,19 @@ def build_router(
 
     @router.message(Command("tunnel_status", "tunnel-status"))
     async def handle_tunnel_status(message: Message) -> None:
-        live_url = await tunnel.refresh_url()
-        if live_url:
-            await message.answer(f"Tunnel: active\nURL: {live_url}")
-        elif tunnel.is_running():
+        state = await tunnel.state()
+        if state is TunnelState.CONNECTED:
+            await message.answer(f"Tunnel ({tunnel.backend}): active\nURL: {tunnel.url()}")
+        elif state is TunnelState.CONNECTING:
             await message.answer(
-                "Tunnel: service running but no URL detected.\n"
-                "The relay may have rejected the connection. "
-                "The service is retrying automatically."
+                f"Tunnel ({tunnel.backend}): running but not connected to the relay.\n"
+                "It retries automatically; /reconnect_tunnel forces a restart."
             )
         else:
-            await message.answer("Tunnel: not running. Use /link to start.")
+            await message.answer(
+                f"Tunnel ({tunnel.backend}): not running.\n"
+                "Use /reconnect_tunnel to restart the service."
+            )
 
     return router
 

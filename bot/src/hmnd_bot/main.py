@@ -21,7 +21,8 @@ from .first_sync import FirstSyncWatcher
 from .logging import configure_logging
 from .node import NodeClient, NodeUnavailable
 from .stall import StallDetector
-from .tunnel import NgrokTunnel
+from .tunnel import NativeTunnel, NgrokTunnel, Tunnel
+from .tunnel_watch import TunnelWatcher
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,12 @@ async def main() -> int:
         return 1
     logger.info("node RPC reachable")
 
-    tunnel = NgrokTunnel(cfg.ngrok_authtoken)
+    tunnel: Tunnel = (
+        NgrokTunnel(cfg.ngrok_authtoken, on_url=redaction.register_exact)
+        if cfg.ngrok_authtoken
+        else NativeTunnel(on_url=redaction.register_exact)
+    )
+    logger.info("tunnel backend: %s", tunnel.backend)
     webapp_base = os.environ.get("BIOAUTH_WEBAPP_BASE", DEFAULT_WEBAPP_BASE)
 
     async def send_text(text: str) -> None:
@@ -141,7 +147,16 @@ async def main() -> int:
     catchup_task = asyncio.create_task(catchup.run(), name="catchup")
     tasks = [polling_task, first_sync_task, catchup_task]
 
-    if cfg.bioauth_remind_before and cfg.bioauth_remind_after:
+    if tunnel.backend == "native":
+        tunnel_watch = TunnelWatcher(
+            tunnel=tunnel,
+            notify=send_text,
+            backoff=cfg.tunnel_restart_backoff,
+            poll_interval=cfg.tunnel_health_poll,
+        )
+        tasks.append(asyncio.create_task(tunnel_watch.run(), name="tunnel-health"))
+
+    if cfg.bioauth_remind_before or cfg.bioauth_remind_after:
         bioauth = BioauthScheduler(
             node=node, tunnel=tunnel, catchup=catchup,
             send_photo=send_photo, send_text=send_text,

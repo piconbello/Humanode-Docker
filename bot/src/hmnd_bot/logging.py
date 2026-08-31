@@ -17,6 +17,8 @@ _SHAPE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"wss?://[A-Za-z0-9-]+\.ngrok(?:-free)?\.app\S*"),
     re.compile(r"https?://[A-Za-z0-9.-]+\.ws-tunnel\.humanode\.io\S*"),
     re.compile(r"wss?://[A-Za-z0-9.-]+\.ws-tunnel\.humanode\.io\S*"),
+    re.compile(r"https?://[A-Za-z0-9.-]+\.htunnel\.app\S*"),
+    re.compile(r"wss?://[A-Za-z0-9.-]+\.htunnel\.app\S*"),
 )
 
 

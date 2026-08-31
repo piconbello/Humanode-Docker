@@ -7,3 +7,4 @@ __pycache__/
 venv/
 build/artifacts-cache/
 artifacts/humanode-peer
+data/

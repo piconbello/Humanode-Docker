@@ -12,4 +12,4 @@ docker-compose.yml
 bot/.pytest_cache/
 bot/tests/__pycache__/
 bot/src/hmnd_bot.egg-info/
-**/__pycache__/
+**/__pycache__/data/

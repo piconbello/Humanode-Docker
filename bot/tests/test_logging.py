@@ -157,3 +157,32 @@ def test_filter_without_exception_is_unaffected():
     rec = _record("plain message")
     assert f.filter(rec) is True
     assert rec.exc_text is None
+
+
+def test_redacts_native_htunnel_host():
+    f = RedactionFilter()
+    rec = _record("endpoint %s", "wss://4cd2-92-239-252-140.ws1.htunnel.app")
+    f.filter(rec)
+    assert rec.args == (REDACTED,)
+
+
+def test_redacts_native_htunnel_host_https_form():
+    f = RedactionFilter()
+    rec = _record("public_url %s", "https://4cd2-92-239-252-140.ws1.htunnel.app")
+    f.filter(rec)
+    assert rec.args == (REDACTED,)
+
+
+def test_native_tunnel_url_does_not_leak_operator_ip():
+    f = RedactionFilter()
+    rec = _record("Tunnel: active URL: wss://4cd2-92-239-252-140.ws1.htunnel.app")
+    f.filter(rec)
+    assert "92-239-252-140" not in rec.msg
+
+
+def test_registered_tunnel_url_is_redacted_regardless_of_domain():
+    f = RedactionFilter()
+    f.register_exact("wss://abcd-1-2-3-4.ws9.some-new-domain.example")
+    rec = _record("endpoint %s", "wss://abcd-1-2-3-4.ws9.some-new-domain.example")
+    f.filter(rec)
+    assert rec.args == (REDACTED,)

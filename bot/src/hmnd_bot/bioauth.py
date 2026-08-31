@@ -8,7 +8,7 @@ from typing import Awaitable, Callable
 from .bioauth_url import compose_bioauth_url
 from .catchup import CatchupDetector
 from .node import BioauthStatus, NodeClient, NodeUnavailable
-from .tunnel import NgrokTunnel, TunnelAuthFailure, TunnelError, TunnelQuotaExceeded
+from .tunnel import Tunnel, TunnelAuthFailure, TunnelError, TunnelQuotaExceeded
 from . import state
 
 logger = logging.getLogger(__name__)
@@ -25,12 +25,12 @@ class BioauthScheduler:
         self,
         *,
         node: NodeClient,
-        tunnel: NgrokTunnel,
+        tunnel: Tunnel,
         catchup: CatchupDetector,
         send_photo: Callable[[bytes, str], Awaitable[None]],
         send_text: Callable[[str], Awaitable[None]],
-        remind_before: list[timedelta],
-        remind_after: list[timedelta],
+        remind_before: list[timedelta] | None,
+        remind_after: list[timedelta] | None,
         webapp_base: str,
         slot_state_path: str = SLOT_STATE_PATH,
         tick: timedelta = timedelta(seconds=30),
@@ -40,8 +40,8 @@ class BioauthScheduler:
         self._catchup = catchup
         self._send_photo = send_photo
         self._send_text = send_text
-        self._remind_before = sorted(remind_before)
-        self._remind_after = remind_after
+        self._remind_before = sorted(remind_before or [])
+        self._remind_after = remind_after or []
         self._webapp_base = webapp_base
         self._slot_state_path = slot_state_path
         self._tick = tick
@@ -110,7 +110,7 @@ class BioauthScheduler:
         remaining = expires - now
         if remaining <= timedelta(0):
             return True
-        return remaining <= max(self._remind_before)
+        return bool(self._remind_before) and remaining <= max(self._remind_before)
 
     async def _evaluate(self, now: datetime) -> None:
         status: BioauthStatus = await self._node.bioauth_status()
