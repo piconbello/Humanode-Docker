@@ -62,7 +62,7 @@ if ! find "$BASE_PATH/chains" -type f -path '*/keystore/6b626169*' 2>/dev/null |
     exit 1
 fi
 
-chown -R hmnd:hmnd "$BASE_PATH/chains"
+chown -R hmnd:hmnd "$BASE_PATH/chains" 2>/dev/null || true
 
 find "$BASE_PATH/chains" -type d -name keystore 2>/dev/null | while IFS= read -r kdir; do
     chmod 0700 "$kdir"

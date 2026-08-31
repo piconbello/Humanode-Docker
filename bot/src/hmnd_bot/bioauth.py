@@ -98,10 +98,12 @@ class BioauthScheduler:
             await self._deliver(status, now)
 
     def _syncing_text(self) -> str:
-        lag = self._catchup.lag
-        if lag is None:
+        gap = self._catchup.gap
+        eta = self._catchup.eta
+        if gap is None:
             return SYNCING_MESSAGE
-        return f"{SYNCING_MESSAGE} Currently about {_human(lag)} behind."
+        eta_part = f" ETA ~{_human(eta)}." if eta is not None else ""
+        return f"{SYNCING_MESSAGE} Currently {_blocks(gap)} behind.{eta_part}"
 
     def _facescan_due(self, status: BioauthStatus, now: datetime) -> bool:
         if not status.is_active or status.expires_at_ms is None:
@@ -222,6 +224,15 @@ def _label(d: timedelta) -> str:
     if s % 60 == 0:
         return f"{s // 60}m"
     return f"{s}s"
+
+def _blocks(gap: int | None) -> str:
+    if gap is None:
+        return "unknown blocks"
+    if gap >= 1_000_000:
+        return f"{gap / 1_000_000:.1f}M blocks"
+    if gap >= 1_000:
+        return f"{gap / 1_000:.1f}K blocks"
+    return f"{gap} blocks"
 
 def _human(d: timedelta) -> str:
     total = int(d.total_seconds())

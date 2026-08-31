@@ -35,7 +35,7 @@ def build_router(
             except NodeUnavailable:
                 await message.answer("Node RPC is unreachable right now. Try again shortly.")
                 return
-            await message.answer(_syncing_reply(catchup.lag, best.number, health.peers))
+            await message.answer(_syncing_reply(catchup.gap, best.number, health.peers, catchup.eta))
             return
 
         try:
@@ -102,10 +102,20 @@ def build_router(
     return router
 
 
-def _syncing_reply(lag: timedelta | None, best_block: int, peers: int) -> str:
-    behind = "chain view unavailable" if lag is None else f"about {_human(lag)} behind"
-    return (f"⏳ Node is still syncing ({behind}, best block #{best_block}, peers {peers}). "
+def _syncing_reply(gap: int | None, best_block: int, peers: int, eta: timedelta | None = None) -> str:
+    behind = _blocks(gap)
+    eta_part = f", ETA ~{_human(eta)}" if eta is not None else ""
+    return (f"⏳ Node is still syncing ({behind} behind, best block #{best_block}, peers {peers}{eta_part}). "
             f"Wait for sync to complete before attempting a facescan.")
+
+def _blocks(gap: int | None) -> str:
+    if gap is None:
+        return "unknown"
+    if gap >= 1_000_000:
+        return f"{gap / 1_000_000:.1f}M blocks"
+    if gap >= 1_000:
+        return f"{gap / 1_000:.1f}K blocks"
+    return f"{gap} blocks"
 
 def _human(d: timedelta) -> str:
     total = int(d.total_seconds())
