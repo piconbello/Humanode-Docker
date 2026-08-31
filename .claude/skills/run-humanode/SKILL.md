@@ -22,6 +22,39 @@ Docker with the Compose plugin (verified on Docker 29.6.1 / Compose 5.2.0), `cur
 `Linux-x86_64` tunnel client and `s6-overlay-x86_64`, so there is no arm64 path. A full
 mainnet sync needs far more than the ~1.2 GB image; budget tens of GB for `./data`.
 
+## Deployment flow
+
+When deploying, follow this order. Before running `up`, ask the user **all three** of these
+in a single prompt:
+
+1. **Tunnel backend** — Native Humanode tunnel (default, no account needed) or ngrok?
+   If ngrok, they must provide their authtoken. Run `deploy.sh ngrok <authtoken>` to switch,
+   or leave the default for native.
+
+2. **Telegram bot** — They need a bot token (from @BotFather: send `/newbot`, pick a name
+   and username ending in `bot`, copy the token) and their numeric Telegram user ID
+   (from @userinfobot: send `/start`, copy the number). Both are required.
+
+3. **Seed mnemonic** — After the node is healthy, tell the user to run:
+   ```
+   ! bash .claude/skills/run-humanode/seed.sh
+   ```
+   Never ask for the mnemonic in chat. Never run `deploy.sh seed` through Claude's Bash tool.
+
+### Step-by-step
+
+1. `deploy.sh check` — prerequisites
+2. `deploy.sh init` — create `.env` and `./data`
+3. `deploy.sh validator` — enable validator mode
+4. Apply tunnel choice — `deploy.sh ngrok <authtoken>` if ngrok, skip if native
+5. `deploy.sh telegram <token> <userid>` — live-verified before writing
+6. `deploy.sh build` or pull the pre-built image (`ghcr.io/piconbello/humanode-docker:latest`)
+   if not on `main` — tag it as `hmnd-validator:latest` for docker-compose.
+7. `deploy.sh up` — validates config, then starts the container
+8. `deploy.sh status` — confirm node, tunnel, and bot are healthy
+9. Tell the user: `! bash .claude/skills/run-humanode/seed.sh` to insert their mnemonic
+10. `deploy.sh link` — get the bioauth URL
+
 ## Quick start
 
 ```sh
@@ -31,7 +64,7 @@ mainnet sync needs far more than the ~1.2 GB image; budget tens of GB for `./dat
 .claude/skills/run-humanode/deploy.sh telegram <token> <userid>    # live-verified before writing
 .claude/skills/run-humanode/deploy.sh build
 .claude/skills/run-humanode/deploy.sh up                           # validates, then starts
-printf '%s' "$SEED" | .claude/skills/run-humanode/deploy.sh seed
+bash .claude/skills/run-humanode/seed.sh                           # interactive; hidden input
 .claude/skills/run-humanode/deploy.sh link
 ```
 
