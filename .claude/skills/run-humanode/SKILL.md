@@ -35,10 +35,19 @@ in a single prompt:
    and username ending in `bot`, copy the token) and their numeric Telegram user ID
    (from @userinfobot: send `/start`, copy the number). Both are required.
 
-3. **Seed mnemonic** — After the node is healthy, tell the user to run:
-   ```
-   ! bash .claude/skills/run-humanode/seed.sh
-   ```
+3. **Seed mnemonic** — After the node is healthy, tell the user to run `seed.sh`.
+   It needs a real interactive terminal for the hidden prompt, so **where** they
+   run it matters:
+   - **Desktop (terminal app open):** `! bash .claude/skills/run-humanode/seed.sh`
+     — the `!` launcher pops a GUI window for the hidden prompt.
+   - **Headless / SSH server:** Claude's `!` has no controlling terminal and there
+     is no GUI to pop, so tell the user to run it in a **separate interactive shell**
+     (a second SSH session) from the repo root:
+     ```
+     bash .claude/skills/run-humanode/seed.sh
+     ```
+     There stdin is a TTY and the hidden prompt works directly.
+
    Never ask for the mnemonic in chat. Never run `deploy.sh seed` through Claude's Bash tool.
 
 ### Step-by-step
@@ -52,7 +61,9 @@ in a single prompt:
    if not on `main` — tag it as `hmnd-validator:latest` for docker-compose.
 7. `deploy.sh up` — validates config, then starts the container
 8. `deploy.sh status` — confirm node, tunnel, and bot are healthy
-9. Tell the user: `! bash .claude/skills/run-humanode/seed.sh` to insert their mnemonic
+9. Tell the user to run `seed.sh` to insert their mnemonic — `! bash
+   .claude/skills/run-humanode/seed.sh` on a desktop, or `bash
+   .claude/skills/run-humanode/seed.sh` in a separate SSH shell on a headless server
 10. `deploy.sh link` — get the bioauth URL
 
 ## Quick start
@@ -212,6 +223,22 @@ They are mutually exclusive. An ngrok token can only be proven valid at runtime 
 ## Insert the session-key seed
 
 Session keys only — **not** the stash/controller seed.
+
+The `seed.sh` wrapper reads the mnemonic from whatever real terminal it can find, in
+this order: an interactive stdin (script run directly in a shell), then `/dev/tty` (piped
+but still attached to a terminal), and only then a fresh GUI window on a desktop. It needs
+one of these to prompt with hidden input.
+
+```sh
+bash .claude/skills/run-humanode/seed.sh
+```
+
+**On a headless / SSH server** run that in your own interactive shell (a second SSH
+session) — **not** through Claude's `!`, which has no controlling terminal, and not
+expecting a GUI window to pop. If no terminal is reachable, `seed.sh` prints the exact
+command to run manually instead of silently doing nothing.
+
+Equivalent raw form, no wrapper:
 
 ```sh
 read -rsp 'Seed: ' SEED; echo
