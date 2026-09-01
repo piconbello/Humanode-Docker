@@ -16,9 +16,11 @@ def _stub_qr(monkeypatch):
 
 
 class FakeCatchup:
-    def __init__(self, behind=False, lag=None):
+    def __init__(self, behind=False, lag=None, gap=None, eta=None):
         self.is_behind = behind
         self.lag = lag
+        self.gap = gap
+        self.eta = eta
 
 
 class FakeNode:
@@ -76,22 +78,26 @@ async def test_link_returns_qr_when_current():
 
 async def test_link_warns_and_withholds_link_when_behind():
     tunnel = FakeTunnel()
-    handler = _handler(FakeCatchup(behind=True, lag=timedelta(hours=4)), FakeNode(), tunnel)
+    catchup = FakeCatchup(behind=True, gap=5000, eta=timedelta(hours=4))
+    handler = _handler(catchup, FakeNode(), tunnel)
     msg = FakeMessage()
     await handler(msg)
     msg.answer_photo.assert_not_called()
     assert tunnel.starts == 0
     text = msg.answer.call_args[0][0]
     assert "syncing" in text.lower()
+    assert "5.0K blocks" in text
     assert "4h" in text
     assert "12345" in text
 
 
-async def test_link_reports_unavailable_chain_view():
-    handler = _handler(FakeCatchup(behind=True, lag=None), FakeNode(), FakeTunnel())
+async def test_link_reports_unknown_gap_when_chain_view_unavailable():
+    handler = _handler(FakeCatchup(behind=True, gap=None), FakeNode(), FakeTunnel())
     msg = FakeMessage()
     await handler(msg)
-    assert "unavailable" in msg.answer.call_args[0][0].lower()
+    reply = msg.answer.call_args[0][0].lower()
+    assert "syncing" in reply
+    assert "unknown" in reply
 
 
 async def test_link_reports_rpc_unreachable_while_behind():

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 
 import aiohttp
 
@@ -49,6 +49,30 @@ class BioauthStatus:
     is_active: bool
     expires_at_ms: int | None
     raw: Any
+
+
+class SyncNode(Protocol):
+    """The node surface CatchupDetector depends on."""
+
+    async def best_block_age(self, now: datetime) -> timedelta | None: ...
+
+    async def sync_state(self) -> SyncState: ...
+
+    async def system_health(self) -> Health: ...
+
+
+class ChainStatusNode(Protocol):
+    """The node surface the /link command depends on."""
+
+    async def system_health(self) -> Health: ...
+
+    async def best_block(self) -> BlockInfo: ...
+
+
+class BioauthNode(Protocol):
+    """The node surface BioauthScheduler depends on."""
+
+    async def bioauth_status(self) -> BioauthStatus: ...
 
 
 class NodeClient:

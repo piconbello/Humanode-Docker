@@ -8,8 +8,8 @@ from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, Message
 
 from .bioauth_url import compose_bioauth_url, qr_png_bytes
-from .catchup import CatchupDetector
-from .node import NodeClient, NodeUnavailable
+from .catchup import CatchupView
+from .node import ChainStatusNode, NodeUnavailable
 from .tunnel import Tunnel, TunnelAuthFailure, TunnelQuotaExceeded, TunnelError, TunnelState
 
 logger = logging.getLogger(__name__)
@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 def build_router(
     *,
     chat_id: int,
-    node: NodeClient,
+    node: ChainStatusNode,
     tunnel: Tunnel,
-    catchup: CatchupDetector,
+    catchup: CatchupView,
     webapp_base: str,
 ) -> Router:
     router = Router()

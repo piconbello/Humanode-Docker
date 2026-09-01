@@ -3,8 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from hmnd_bot.catchup import CatchupDetector
-from hmnd_bot.node import NodeRpcError, NodeUnavailable, SyncState
+from hmnd_bot.catchup import MAX_GAP_ZERO_HOLDS, CatchupDetector
+from hmnd_bot.node import Health, NodeRpcError, NodeUnavailable, SyncState
 
 T0 = datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc)
 MAX_AGE = timedelta(minutes=2)
@@ -15,9 +15,11 @@ UNREADABLE = object()
 
 
 class FakeNode:
-    def __init__(self, age=timedelta(seconds=1), gap=0):
+    def __init__(self, age=timedelta(seconds=1), gap=0, peers=7, is_syncing=False):
         self.age = age
         self.gap = gap
+        self.peers = peers
+        self.is_syncing = is_syncing
 
     async def best_block_age(self, now):
         if self.age is UNREADABLE:
@@ -28,6 +30,15 @@ class FakeNode:
         if self.gap is UNREADABLE:
             raise NodeUnavailable("down")
         return SyncState(current=1000, highest=1000 + self.gap, gap=self.gap)
+
+    async def system_health(self):
+        if self.peers is UNREADABLE:
+            raise NodeUnavailable("down")
+        return Health(
+            peers=self.peers,
+            is_syncing=self.is_syncing,
+            should_have_peers=True,
+        )
 
 
 def build(node):
@@ -163,6 +174,74 @@ async def test_hold_exit_emits_one_exit_after_debounce():
 
     await settle(det, node, t + timedelta(minutes=5))
     assert det.pending_exit is False
+
+
+async def test_health_syncing_flag_alone_marks_behind():
+    node = FakeNode(age=timedelta(seconds=1), gap=0, is_syncing=True)
+    det = build(node)
+    await det.poll(T0)
+    assert det.is_behind is True
+
+    node.is_syncing = False
+    await det.poll(T0 + timedelta(seconds=30))
+    assert det.is_behind is False
+
+
+async def test_zero_gap_is_not_trusted_while_the_node_has_no_peers():
+    node = FakeNode(age=timedelta(hours=4), gap=5000)
+    det = build(node)
+    await det.poll(T0)
+
+    node.age = timedelta(seconds=1)
+    node.gap = 0
+    node.peers = 0
+    await det.poll(T0 + timedelta(seconds=30))
+    assert det.gap == 5000
+    assert det.is_behind is True
+
+
+async def test_zero_gap_is_trusted_once_peers_are_back():
+    node = FakeNode(age=timedelta(hours=4), gap=5000)
+    det = build(node)
+    await det.poll(T0)
+
+    node.age = timedelta(seconds=1)
+    node.gap = 0
+    node.peers = 0
+    await det.poll(T0 + timedelta(seconds=30))
+
+    node.peers = 7
+    await det.poll(T0 + timedelta(seconds=60))
+    assert det.gap == 0
+    assert det.is_behind is False
+
+
+@pytest.mark.parametrize(
+    "age,expected_behind",
+    [(timedelta(seconds=1), False), (timedelta(hours=4), True)],
+)
+async def test_unreadable_health_falls_back_to_age_and_gap(age, expected_behind):
+    node = FakeNode(age=age, gap=0, peers=UNREADABLE)
+    det = build(node)
+    await det.poll(T0)
+    assert det.is_behind is expected_behind
+
+
+async def test_gap_zero_hold_expires_instead_of_latching_forever():
+    node = FakeNode(age=UNREADABLE, gap=5000)
+    det = build(node)
+    t = await settle(det, node, T0)
+    det.clear_pending_entry()
+
+    node.gap = 0
+    for i in range(MAX_GAP_ZERO_HOLDS):
+        await det.poll(t + timedelta(seconds=30 * i))
+        assert det.gap == 5000
+        assert det.is_behind is True
+
+    await det.poll(t + timedelta(seconds=30 * MAX_GAP_ZERO_HOLDS))
+    assert det.gap == 0
+    assert det.is_behind is False
 
 
 async def test_exit_never_emitted_without_a_preceding_hold():

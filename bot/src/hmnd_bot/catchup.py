@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Protocol
 
-from .node import NodeClient, NodeRpcError, NodeUnavailable
+from .node import NodeRpcError, NodeUnavailable, SyncNode
 
 logger = logging.getLogger(__name__)
 
@@ -13,14 +14,43 @@ NOMINAL_BLOCK_TIME = timedelta(seconds=6)
 PROGRESS_EPSILON = timedelta(seconds=30)
 POLL_INTERVAL = timedelta(seconds=30)
 MAX_PENDING_NOTICES = 32
+MAX_GAP_ZERO_HOLDS = 20
 SPEED_WINDOW = timedelta(minutes=5)
+
+
+class CatchupView(Protocol):
+    """The read-only catch-up state the /link command depends on."""
+
+    @property
+    def is_behind(self) -> bool: ...
+
+    @property
+    def gap(self) -> int | None: ...
+
+    @property
+    def eta(self) -> timedelta | None: ...
+
+
+class CatchupControl(CatchupView, Protocol):
+    """The catch-up surface BioauthScheduler depends on."""
+
+    pending_entry: bool
+    pending_exit: bool
+
+    def take_notices(self) -> list[str]: ...
+
+    def requeue_notices(self, items: list[str]) -> None: ...
+
+    def clear_pending_entry(self) -> None: ...
+
+    def clear_pending_exit(self) -> None: ...
 
 
 class CatchupDetector:
     def __init__(
         self,
         *,
-        node: NodeClient,
+        node: SyncNode,
         max_block_age: timedelta,
         max_block_gap: int,
         debounce: timedelta = DEBOUNCE,
@@ -53,6 +83,7 @@ class CatchupDetector:
         self._no_progress_fired = 0
         self._speed_samples: list[tuple[datetime, int]] = []
         self._last_gap: int | None = None
+        self._gap_zero_holds = 0
 
     @property
     def is_behind(self) -> bool:
@@ -106,7 +137,7 @@ class CatchupDetector:
             self._settle(self._behind, now)
             return
 
-        gap = self._sanitize_gap(gap, health)
+        gap = self._sanitize_gap(gap, health, age)
 
         if state is not None and gap is not None:
             self._record_speed(now, state.current, gap)
@@ -141,7 +172,9 @@ class CatchupDetector:
         except (NodeUnavailable, NodeRpcError):
             return None
 
-    def _sanitize_gap(self, gap: int | None, health) -> int | None:
+    def _sanitize_gap(
+        self, gap: int | None, health, age: timedelta | None
+    ) -> int | None:
         if gap is None:
             return None
         no_peers = health is not None and health.peers == 0
@@ -149,13 +182,34 @@ class CatchupDetector:
             logger.debug("gap=%d but peers=0; using last known gap", gap)
             return self._last_gap
         if self._last_gap is not None and self._last_gap > 1000 and gap == 0:
-            logger.warning(
-                "gap dropped from %d to 0 in one poll; likely a peer disconnect, "
-                "keeping last known gap",
-                self._last_gap,
-            )
-            return self._last_gap
+            if self._at_tip(age, health):
+                logger.info(
+                    "gap dropped from %d to 0 and the chain head is fresh; "
+                    "accepting the node as caught up",
+                    self._last_gap,
+                )
+            elif self._gap_zero_holds < MAX_GAP_ZERO_HOLDS:
+                self._gap_zero_holds += 1
+                logger.warning(
+                    "gap dropped from %d to 0 in one poll; likely a peer disconnect, "
+                    "keeping last known gap (hold %d/%d)",
+                    self._last_gap,
+                    self._gap_zero_holds,
+                    MAX_GAP_ZERO_HOLDS,
+                )
+                return self._last_gap
+            else:
+                logger.warning(
+                    "gap has read 0 for %d consecutive polls; accepting it as real",
+                    self._gap_zero_holds,
+                )
+        self._gap_zero_holds = 0
         return gap
+
+    def _at_tip(self, age: timedelta | None, health) -> bool:
+        if age is None or age >= self._max_block_age:
+            return False
+        return health is None or not health.is_syncing
 
     def _derive_lag(self, age: timedelta | None, gap: int | None) -> timedelta | None:
         if age is not None:

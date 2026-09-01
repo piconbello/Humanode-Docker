@@ -88,9 +88,11 @@ def test_inactive_anchor_establishes_and_persists(tmp_path):
 
 
 class FakeCatchup:
-    def __init__(self, behind=False, lag=None):
+    def __init__(self, behind=False, lag=None, gap=None, eta=None):
         self.is_behind = behind
         self.lag = lag
+        self.gap = gap
+        self.eta = eta
         self.pending_entry = False
         self.pending_exit = False
         self.polls = 0
@@ -166,7 +168,7 @@ async def test_behind_suppresses_evaluation_entirely(tmp_path):
 async def test_hold_entry_clears_anchor_and_sends_syncing(tmp_path):
     anchor = tmp_path / "slot.anchor"
     anchor.write_text(datetime(2026, 8, 19, tzinfo=timezone.utc).isoformat())
-    c = FakeCatchup(behind=True, lag=timedelta(hours=4))
+    c = FakeCatchup(behind=True, gap=5000, eta=timedelta(hours=4))
     c.pending_entry = True
     s = _sched(tmp_path, c)
     await s._step(NOW)
@@ -174,6 +176,7 @@ async def test_hold_entry_clears_anchor_and_sends_syncing(tmp_path):
     assert c.pending_entry is False
     sent = s._send_text.call_args[0][0]
     assert "syncing" in sent.lower()
+    assert "5.0K blocks" in sent
     assert "4h" in sent
 
 
@@ -212,6 +215,18 @@ async def test_hold_exit_followup_when_inside_earliest_window(tmp_path):
     c.pending_exit = True
     s = _sched(tmp_path, c, status=_active(NOW, timedelta(hours=12)))
     await s._step(NOW)
+    s._send_photo.assert_called_once()
+
+
+async def test_hold_exit_followup_is_recorded_and_not_repeated(tmp_path):
+    c = FakeCatchup(behind=False)
+    c.pending_exit = True
+    s = _sched(tmp_path, c, status=_active(NOW, timedelta(hours=12)))
+    await s._step(NOW)
+    s._send_photo.assert_called_once()
+    assert (tmp_path / "slot").read_text().endswith(":pre-1d")
+
+    await s._step(NOW + timedelta(seconds=30))
     s._send_photo.assert_called_once()
 
 

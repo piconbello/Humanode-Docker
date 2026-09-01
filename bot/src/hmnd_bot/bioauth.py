@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
 from .bioauth_url import compose_bioauth_url
-from .catchup import CatchupDetector
-from .node import BioauthStatus, NodeClient, NodeUnavailable
+from .catchup import CatchupControl
+from .node import BioauthNode, BioauthStatus, NodeUnavailable
 from .tunnel import Tunnel, TunnelAuthFailure, TunnelError, TunnelQuotaExceeded
 from . import state
 
@@ -24,9 +24,9 @@ class BioauthScheduler:
     def __init__(
         self,
         *,
-        node: NodeClient,
+        node: BioauthNode,
         tunnel: Tunnel,
-        catchup: CatchupDetector,
+        catchup: CatchupControl,
         send_photo: Callable[[bytes, str], Awaitable[None]],
         send_text: Callable[[str], Awaitable[None]],
         remind_before: list[timedelta] | None,
@@ -94,8 +94,11 @@ class BioauthScheduler:
         self._catchup.clear_pending_exit()
         self._write_anchor(now)
         status: BioauthStatus = await self._node.bioauth_status()
-        if self._facescan_due(status, now):
-            await self._deliver(status, now)
+        if not self._facescan_due(status, now):
+            return
+        slot_id = self._current_slot_id(status, now)
+        if await self._deliver(status, now) and slot_id is not None:
+            state.write_flag(self._slot_state_path, slot_id)
 
     def _syncing_text(self) -> str:
         gap = self._catchup.gap
