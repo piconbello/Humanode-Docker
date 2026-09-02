@@ -54,7 +54,7 @@ def test_load_config_applies_defaults():
         timedelta(hours=3), timedelta(hours=6), timedelta(hours=12),
         timedelta(days=2), timedelta(days=4),
     ]
-    assert cfg.block_stall_threshold is None
+    assert cfg.block_stall_threshold == timedelta(seconds=30)
     assert cfg.rpc_url == "ws://127.0.0.1:9944"
 
 
@@ -228,15 +228,27 @@ def test_before_only_ladder_is_allowed():
     assert cfg.bioauth_remind_after is None
 
 
-def test_stall_alerts_remain_opt_in():
+def test_stall_alerts_are_on_by_default():
     cfg = load_config(BASE_ENV)
-    assert cfg.block_stall_threshold is None
-    assert cfg.finality_stall_threshold is None
+    # 5 blocks at the 6s nominal block time
+    assert cfg.block_stall_threshold == timedelta(seconds=30)
+    # alert on detection, then once an hour until it clears
+    assert cfg.block_stall_remind_after == [timedelta(hours=1)]
+    # finality normally trails the tip by 2-3 blocks; 4+ is a real lag
+    assert cfg.finality_max_lag == 3
+    assert cfg.finality_lag_remind_after == [timedelta(hours=1)]
 
 
 def test_stall_alerts_can_be_disabled_explicitly():
     cfg = load_config(BASE_ENV | {"BLOCK_STALL_THRESHOLD": "off"})
     assert cfg.block_stall_threshold is None
+    cfg = load_config(BASE_ENV | {"FINALITY_MAX_LAG": "none"})
+    assert cfg.finality_max_lag is None
+
+
+def test_finality_max_lag_override_parses():
+    cfg = load_config(BASE_ENV | {"FINALITY_MAX_LAG": "10"})
+    assert cfg.finality_max_lag == 10
 
 
 def test_reminder_override_still_parses():

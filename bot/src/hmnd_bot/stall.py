@@ -28,6 +28,26 @@ def cumulative_offsets(cadence: list[timedelta]) -> list[timedelta]:
     return out
 
 
+def reminder_due(elapsed: timedelta, offsets: list[timedelta], cadence: list[timedelta]) -> int:
+    """How many reminders are due `elapsed` after the alert.
+
+    Each cumulative offset is one reminder, and the last interval repeats
+    forever, so a cadence of "1h" means a reminder every hour until it clears.
+    """
+    if not offsets:
+        return 0
+    crossed = 0
+    for i, off in enumerate(offsets):
+        if elapsed >= off:
+            crossed = i + 1
+    if crossed < len(offsets):
+        return crossed
+    tail = cadence[-1]
+    past_last = elapsed - offsets[-1]
+    extra = int(past_last / tail)
+    return len(offsets) + extra
+
+
 class StallDetector:
     def __init__(
         self,
@@ -88,7 +108,11 @@ class StallDetector:
             return
 
         if self._stalled is None:
-            self._stalled = _StalledState(since=now, stopped_at=block.number, reminders_fired=0)
+            # Date the stall from the last advance, not from detection: otherwise
+            # every recovery message understates the outage by the threshold.
+            self._stalled = _StalledState(
+                since=self._last_advance_at, stopped_at=block.number, reminders_fired=0
+            )
             msg = self._format_stall_msg(block, health, elapsed)
             await self._safe_notify(msg)
             self._stalled.reminders_fired = 1
@@ -103,18 +127,7 @@ class StallDetector:
             self._stalled.reminders_fired = due + 1
 
     def _reminder_due(self, elapsed: timedelta, offsets: list[timedelta]) -> int:
-        if not offsets:
-            return 0
-        crossed = 0
-        for i, off in enumerate(offsets):
-            if elapsed >= off:
-                crossed = i + 1
-        if crossed < len(offsets):
-            return crossed - 1 if crossed > 0 else -1
-        tail = self._cadence[-1]
-        past_last = elapsed - offsets[-1]
-        extra = int(past_last / tail)
-        return len(offsets) - 1 + extra
+        return reminder_due(elapsed, offsets, self._cadence)
 
     async def _safe_notify(self, text: str) -> None:
         try:
@@ -134,3 +147,92 @@ def _human(delta: timedelta) -> str:
     if total < 3600:
         return f"{total // 60}m {total % 60}s"
     return f"{total // 3600}h {(total % 3600) // 60}m"
+
+
+@dataclass
+class _LaggingState:
+    since: datetime
+    reminders_fired: int
+
+
+class FinalityLagDetector:
+    """Alerts when finality falls further behind the best block than it should.
+
+    Finality normally trails the tip by 2-3 blocks, so anything past `max_lag`
+    means GRANDPA is not keeping up - which a "has the finalized head advanced"
+    check would miss entirely while finality crawls forward behind a growing gap.
+    """
+
+    def __init__(
+        self,
+        *,
+        node: NodeClient,
+        first_sync: FirstSyncWatcher,
+        max_lag: int,
+        remind_cadence: list[timedelta],
+        notify: Callable[[str], Awaitable[None]],
+        poll_interval: timedelta = timedelta(seconds=30),
+    ) -> None:
+        self._node = node
+        self._first_sync = first_sync
+        self._max_lag = max_lag
+        self._cadence = remind_cadence
+        self._notify = notify
+        self._poll_interval = poll_interval
+        self._lagging: _LaggingState | None = None
+
+    async def run(self) -> None:
+        await self._first_sync.wait_complete()
+        while True:
+            try:
+                await self._tick()
+            except NodeUnavailable:
+                logger.debug("finality lag: node unavailable; skipping tick")
+            except Exception:
+                logger.exception("finality lag tick error")
+            await asyncio.sleep(self._poll_interval.total_seconds())
+
+    async def _tick(self) -> None:
+        health: Health = await self._node.system_health()
+        best: BlockInfo = await self._node.best_block()
+        finalized: BlockInfo = await self._node.finalized_head()
+        now = datetime.now(timezone.utc)
+        lag = best.number - finalized.number
+
+        # A syncing or peerless node legitimately runs hundreds of blocks behind.
+        if health.is_syncing or health.peers <= 0:
+            return
+
+        if lag <= self._max_lag:
+            if self._lagging is not None:
+                await self._safe_notify(
+                    f"✅ finality recovered. best #{best.number}, "
+                    f"finalized #{finalized.number} ({lag} behind, "
+                    f"lagging for {_human(now - self._lagging.since)})."
+                )
+                self._lagging = None
+            return
+
+        if self._lagging is None:
+            self._lagging = _LaggingState(since=now, reminders_fired=1)
+            await self._safe_notify(self._format_msg(best, finalized, lag, health))
+            return
+
+        offsets = cumulative_offsets(self._cadence)
+        due = reminder_due(now - self._lagging.since, offsets, self._cadence)
+        if due > self._lagging.reminders_fired - 1:
+            await self._safe_notify(self._format_msg(best, finalized, lag, health))
+            self._lagging.reminders_fired = due + 1
+
+    async def _safe_notify(self, text: str) -> None:
+        try:
+            await self._notify(text)
+        except Exception:
+            logger.exception("finality lag DM failed")
+
+    def _format_msg(
+        self, best: BlockInfo, finalized: BlockInfo, lag: int, health: Health
+    ) -> str:
+        return (f"⚠️ finality lagging: best #{best.number}, "
+                f"finalized #{finalized.number} ({lag} behind, normal is "
+                f"{self._max_lag} or less), peers {health.peers}.")

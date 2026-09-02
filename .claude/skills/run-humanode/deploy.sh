@@ -184,7 +184,7 @@ if c.bioauth_remind_after:
     print(f"AFTER={fmt(fires)}")
     print(f"REPEAT={fmt([c.bioauth_remind_after[-1]])}")
 print(f"BLOCKSTALL={'on' if c.block_stall_threshold and c.block_stall_remind_after else 'off'}")
-print(f"FINALITY={'on' if c.finality_stall_threshold and c.finality_stall_remind_after else 'off'}")
+print(f"FINALITY={'on' if c.finality_max_lag and c.finality_lag_remind_after else 'off'}")
 PY
 )
     prc=$?
@@ -283,18 +283,19 @@ cmd_reminders() {
     case "${1:-on}" in
         on)
             sed -i '/^BIOAUTH_REMIND_/d' .env
-            env_set BLOCK_STALL_THRESHOLD "10m"
-            env_set BLOCK_STALL_REMIND_AFTER "30m,1h,2h"
-            env_set FINALITY_STALL_THRESHOLD "30m"
-            env_set FINALITY_STALL_REMIND_AFTER "1h,2h"
+            env_set BLOCK_STALL_THRESHOLD "30s"
+            env_set BLOCK_STALL_REMIND_AFTER "1h"
+            env_set FINALITY_MAX_LAG "3"
+            env_set FINALITY_LAG_REMIND_AFTER "1h"
             c_grn "facescan reminders restored to defaults; stall alerts enabled"
             ;;
         off)
             env_set BIOAUTH_REMIND_BEFORE off
             env_set BIOAUTH_REMIND_AFTER off
-            sed -i '/^BLOCK_STALL_/d;/^FINALITY_STALL_/d' .env
-            c_ylw "facescan reminders disabled (bot answers commands only)"
-            c_ylw "note: deleting the lines is not enough - reminders are ON by default"
+            env_set BLOCK_STALL_THRESHOLD off
+            env_set FINALITY_MAX_LAG off
+            c_ylw "facescan reminders and stall alerts disabled (bot answers commands only)"
+            c_ylw "note: deleting the lines is not enough - both are ON by default"
             ;;
         *) c_red "usage: $0 reminders [on|off]"; exit 1 ;;
     esac
@@ -492,7 +493,7 @@ setup and validation
   validate                  check every setting, live-verify the telegram token
   validator                 set VALIDATOR=true
   telegram <token> <userid> live-verify the token, then write bot settings
-  reminders [on|off]        facescan reminders + stall alerts (OFF by default)
+  reminders [on|off]        facescan reminders + stall alerts (ON by default)
   ngrok [token]             use ngrok (token) or the native tunnel (no args)
 
 running

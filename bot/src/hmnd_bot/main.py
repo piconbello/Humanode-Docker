@@ -20,7 +20,7 @@ from .config import ConfigError, load_config
 from .first_sync import FirstSyncWatcher
 from .logging import configure_logging
 from .node import NodeClient, NodeUnavailable
-from .stall import StallDetector
+from .stall import FinalityLagDetector, StallDetector
 from .tunnel import NativeTunnel, NgrokTunnel, Tunnel
 from .tunnel_watch import TunnelWatcher
 
@@ -176,15 +176,14 @@ async def main() -> int:
         )
         tasks.append(asyncio.create_task(block_stall.run(), name="block-stall"))
 
-    if cfg.finality_stall_threshold and cfg.finality_stall_remind_after:
-        finality_stall = StallDetector(
-            name="finality", node=node, first_sync=first_sync,
-            fetch_block=NodeClient.finalized_head,
-            threshold=cfg.finality_stall_threshold,
-            remind_cadence=cfg.finality_stall_remind_after,
+    if cfg.finality_max_lag and cfg.finality_lag_remind_after:
+        finality_lag = FinalityLagDetector(
+            node=node, first_sync=first_sync,
+            max_lag=cfg.finality_max_lag,
+            remind_cadence=cfg.finality_lag_remind_after,
             notify=send_text,
         )
-        tasks.append(asyncio.create_task(finality_stall.run(), name="finality-stall"))
+        tasks.append(asyncio.create_task(finality_lag.run(), name="finality-lag"))
 
     stop = asyncio.Event()
 
