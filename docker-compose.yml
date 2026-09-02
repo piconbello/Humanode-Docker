@@ -1,7 +1,7 @@
 services:
   humanode:
     build: .
-    image: hmnd-validator:latest
+    image: ghcr.io/piconbello/humanode-docker:${HMND_IMAGE_TAG:-latest}
     container_name: humanode-validator
     restart: unless-stopped
     env_file: .env

@@ -315,6 +315,47 @@ cmd_ngrok() {
 
 cmd_build() { hdr "build"; dc build; }
 
+git_branch() { git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'unknown'; }
+
+# The image docker-compose.yml will actually run, tag interpolation included.
+image_ref() { dc config --images 2>/dev/null | head -1; }
+
+# Pull the published image only when this checkout matches what produced it.
+# GHCR is published from pushes to main, so anywhere else it would run code that
+# is not the code in front of you. Every other case builds locally, which tags
+# the build with the same ref so compose picks it up either way.
+cmd_pull() {
+    hdr "pull"
+    local image branch
+    image="$(image_ref)"
+    [ -n "$image" ] || { c_red "could not resolve the image from docker-compose.yml"; exit 1; }
+    printf 'image       %s\n' "$image"
+    branch="$(git_branch)"
+
+    if [ "$branch" != "main" ]; then
+        c_ylw "on branch '${branch}', not main"
+        c_ylw "the published image is built from main and would not contain this checkout's changes"
+        c_ylw "building locally instead"
+        cmd_build
+        return
+    fi
+
+    if [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]; then
+        c_ylw "working tree has uncommitted changes; the published image would not match them"
+        c_ylw "building locally instead"
+        cmd_build
+        return
+    fi
+
+    if docker pull "$image"; then
+        c_grn "pulled $image"
+        return
+    fi
+
+    c_ylw "pull failed (offline, package not public, or no such tag); building locally instead"
+    cmd_build
+}
+
 cmd_up() {
     need_env
     [ -d "$DATA_DIR" ] || mkdir -p "$DATA_DIR"
@@ -455,7 +496,8 @@ setup and validation
   ngrok [token]             use ngrok (token) or the native tunnel (no args)
 
 running
-  build                     docker compose build
+  pull                      pull the pinned image on a clean main, else build locally
+  build                     always build locally (docker compose build)
   up                        validate, start, wait for node RPC
   seed                      insert session key (mnemonic on stdin ONLY)
   status                    node / keystore / tunnel / bot
@@ -474,6 +516,7 @@ case "${1:-}" in
     telegram) shift; cmd_telegram "${1:-}" "${2:-}" ;;
     reminders) shift; cmd_reminders "${1:-on}" ;;
     ngrok) shift; cmd_ngrok "${1:-}" ;;
+    pull) cmd_pull ;;
     build) cmd_build ;;
     up) cmd_up ;;
     seed) cmd_seed ;;

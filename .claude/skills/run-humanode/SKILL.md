@@ -57,8 +57,13 @@ in a single prompt:
 3. `deploy.sh validator` — enable validator mode
 4. Apply tunnel choice — `deploy.sh ngrok <authtoken>` if ngrok, skip if native
 5. `deploy.sh telegram <token> <userid>` — live-verified before writing
-6. `deploy.sh build` or pull the pre-built image (`ghcr.io/piconbello/humanode-docker:latest`)
-   if not on `main` — tag it as `hmnd-validator:latest` for docker-compose.
+6. `deploy.sh pull` — `docker-compose.yml` runs the published image
+   `ghcr.io/piconbello/humanode-docker:latest`; set `HMND_IMAGE_TAG` in `.env` to pin a
+   release instead. On a clean `main` checkout this pulls that image. On any other branch,
+   with uncommitted changes, or if the pull fails, it builds locally and tags the build with
+   the same ref, so compose runs the right thing either way. `deploy.sh build` always builds
+   locally. Never pull the published image while working on a branch — you would be running
+   main's code and debugging changes that are not in the container.
 7. `deploy.sh up` — validates config, then starts the container
 8. `deploy.sh status` — confirm node, tunnel, and bot are healthy
 9. Tell the user to run `seed.sh` to insert their mnemonic — `! bash
@@ -73,7 +78,7 @@ in a single prompt:
 .claude/skills/run-humanode/deploy.sh init                         # .env + ./data, then validate
 .claude/skills/run-humanode/deploy.sh validator                    # VALIDATOR=true (tunnel + bioauth)
 .claude/skills/run-humanode/deploy.sh telegram <token> <userid>    # live-verified before writing
-.claude/skills/run-humanode/deploy.sh build
+.claude/skills/run-humanode/deploy.sh pull                         # ghcr on clean main, else local build
 .claude/skills/run-humanode/deploy.sh up                           # validates, then starts
 bash .claude/skills/run-humanode/seed.sh                           # interactive; hidden input
 .claude/skills/run-humanode/deploy.sh link
@@ -198,10 +203,12 @@ Set in `.env`; all are validated by `deploy.sh validate`.
 
 ## Upgrading the node
 
-The upstream version is pinned in `artifacts/humanode-version.txt`:
+The upstream version is pinned in `artifacts/humanode-version.txt`. The container runs
+`ghcr.io/piconbello/humanode-docker:latest`, so `pull` picks up the newest published image;
+set `HMND_IMAGE_TAG` in `.env` to stay on a specific release instead.
 
 ```sh
-.claude/skills/run-humanode/deploy.sh build
+.claude/skills/run-humanode/deploy.sh pull
 .claude/skills/run-humanode/deploy.sh up
 ```
 
@@ -338,4 +345,8 @@ local Pillow, not a code failure. Run the other files individually to confirm.
 | `kbai keystore entry already exists` | `deploy.sh destroy` wipes `./data`, then re-insert |
 | `ls: cannot open directory 'data/chains/'` | expected; owned by uid 1100 inside the container |
 | tunnel shows `412` | it retries; `deploy.sh up` forces a restart |
+| `manifest unknown` on pull | `HMND_IMAGE_TAG` names a tag that was never published; check the repo's releases |
+| running an older image than expected | `latest` is only republished on pushes to `main`; `deploy.sh pull` then `up` |
+| container is running code you just changed | `up` reuses the existing image; `deploy.sh build` first |
+| pulled image looks like your local edits | a local build carries the same pinned ref; `docker image rm <ref>`, then `deploy.sh pull` on clean `main` |
 | Disk filling up | image ~1.2 GB, a full sync needs far more; `deploy.sh destroy` reclaims `./data` |
