@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from enum import Enum
+from typing import Callable, Protocol
 
 import aiohttp
 
@@ -15,9 +17,19 @@ NGROK_POLICY_FILE = "/etc/ngrok/policy.yml"
 NGROK_START_TIMEOUT_S = 30
 RECONNECT_TIMEOUT_S = 90
 
+NATIVE_API = "http://127.0.0.1:4545/api/v1/public-url"
+NATIVE_START_TIMEOUT_S = 30
 
 S6_SVC_BIN = "/command/s6-svc"
 S6_TUNNEL_SVC_DIR = "/run/service/tunnel"
+
+UrlSink = Callable[[str], None]
+
+
+class TunnelState(str, Enum):
+    CONNECTED = "connected"
+    CONNECTING = "connecting"
+    DOWN = "down"
 
 
 async def restart_s6_tunnel() -> None:
@@ -47,14 +59,120 @@ class TunnelNetworkError(TunnelError):
     pass
 
 
+class Tunnel(Protocol):
+    backend: str
+    supports_cancel: bool
+
+    async def start(self) -> str: ...
+    async def cancel(self) -> None: ...
+    async def reconnect(self) -> str: ...
+    async def refresh_url(self) -> str | None: ...
+    async def state(self) -> TunnelState: ...
+    def url(self) -> str: ...
+    def is_running(self) -> bool: ...
+
+
+class NativeTunnel:
+    backend = "native"
+    supports_cancel = False
+
+    def __init__(self, on_url: UrlSink | None = None) -> None:
+        self._on_url = on_url
+        self._public_url: str | None = None
+
+    def _adopt(self, url: str) -> str:
+        wss = "wss://" + url.split("://", 1)[-1] if not url.startswith("wss://") else url
+        self._public_url = wss
+        if self._on_url:
+            self._on_url(wss)
+        return wss
+
+    async def _read(self) -> tuple[TunnelState, str | None]:
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
+                async with session.get(NATIVE_API) as resp:
+                    if resp.status == 200:
+                        body = (await resp.text()).strip()
+                        if body:
+                            return TunnelState.CONNECTED, body
+                        return TunnelState.CONNECTING, None
+                    if resp.status == 412:
+                        return TunnelState.CONNECTING, None
+                    return TunnelState.CONNECTING, None
+        except (aiohttp.ClientError, TimeoutError, OSError):
+            return TunnelState.DOWN, None
+
+    async def state(self) -> TunnelState:
+        state, url = await self._read()
+        if url:
+            self._adopt(url)
+        return state
+
+    async def refresh_url(self) -> str | None:
+        _, url = await self._read()
+        if url:
+            return self._adopt(url)
+        return None
+
+    async def start(self) -> str:
+        deadline = asyncio.get_event_loop().time() + NATIVE_START_TIMEOUT_S
+        while asyncio.get_event_loop().time() < deadline:
+            state, url = await self._read()
+            if url:
+                return self._adopt(url)
+            await asyncio.sleep(1)
+        raise TunnelNetworkError(
+            "the tunnel service is running but has not connected to the relay. "
+            "It retries automatically; try /tunnel_status in a few minutes."
+        )
+
+    async def reconnect(self) -> str:
+        await restart_s6_tunnel()
+        self._public_url = None
+        deadline = asyncio.get_event_loop().time() + RECONNECT_TIMEOUT_S
+        while asyncio.get_event_loop().time() < deadline:
+            _, url = await self._read()
+            if url:
+                logger.info("tunnel reconnected")
+                return self._adopt(url)
+            await asyncio.sleep(2)
+        raise TunnelNetworkError(
+            "tunnel did not come up within 90s. "
+            "The tunnel service is retrying in the background; "
+            "try /tunnel_status in a few minutes."
+        )
+
+    async def cancel(self) -> None:
+        self._public_url = None
+
+    def url(self) -> str:
+        if not self._public_url:
+            raise TunnelError("tunnel not open")
+        return self._public_url
+
+    def is_running(self) -> bool:
+        return self._public_url is not None
+
+
 class NgrokTunnel:
-    def __init__(self, authtoken: str, rpc_port: int = 9944) -> None:
+    backend = "ngrok"
+    supports_cancel = True
+
+    def __init__(self, authtoken: str, rpc_port: int = 9944, on_url: UrlSink | None = None) -> None:
         self._authtoken = authtoken
         self._rpc_port = rpc_port
+        self._on_url = on_url
         self._process: asyncio.subprocess.Process | None = None
         self._public_url: str | None = None
         self._external: bool = False
         self._log_tail: list[str] = []
+
+    def _adopt(self, https_url: str) -> str:
+        wss = "wss://" + https_url[len("https://"):]
+        self._public_url = wss
+        if self._on_url:
+            self._on_url(wss)
+        return wss
 
     async def start(self) -> str:
         if self._public_url:
@@ -62,10 +180,9 @@ class NgrokTunnel:
 
         existing = await self._detect_existing_tunnel()
         if existing:
-            self._public_url = "wss://" + existing[len("https://"):]
             self._external = True
             logger.info("ngrok tunnel found (managed by s6 service)")
-            return self._public_url
+            return self._adopt(existing)
 
         env = os.environ.copy()
         env["NGROK_AUTHTOKEN"] = self._authtoken
@@ -86,10 +203,9 @@ class NgrokTunnel:
             await self._kill_process()
             raise
 
-        self._public_url = "wss://" + public_https[len("https://"):]
         self._external = False
         logger.info("ngrok tunnel opened (managed by bot)")
-        return self._public_url
+        return self._adopt(public_https)
 
     async def _detect_existing_tunnel(self) -> str | None:
         try:
@@ -177,6 +293,15 @@ class NgrokTunnel:
     def is_running(self) -> bool:
         return self._public_url is not None
 
+    async def state(self) -> TunnelState:
+        url = await self._detect_existing_tunnel()
+        if url:
+            self._adopt(url)
+            return TunnelState.CONNECTED
+        if self._process and self._process.returncode is None:
+            return TunnelState.CONNECTING
+        return TunnelState.DOWN
+
     async def cancel(self) -> None:
         if not self._external:
             await self._kill_process()
@@ -187,9 +312,8 @@ class NgrokTunnel:
     async def refresh_url(self) -> str | None:
         url = await self._detect_existing_tunnel()
         if url:
-            self._public_url = "wss://" + url[len("https://"):]
             self._external = True
-            return self._public_url
+            return self._adopt(url)
         return None
 
     async def reconnect(self) -> str:
@@ -204,10 +328,9 @@ class NgrokTunnel:
         while asyncio.get_event_loop().time() < deadline:
             url = await self._detect_existing_tunnel()
             if url:
-                self._public_url = "wss://" + url[len("https://"):]
                 self._external = True
                 logger.info("tunnel reconnected")
-                return self._public_url
+                return self._adopt(url)
             await asyncio.sleep(2)
         raise TunnelNetworkError(
             "tunnel did not come up within 90s. "

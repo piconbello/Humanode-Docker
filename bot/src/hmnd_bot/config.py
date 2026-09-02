@@ -29,6 +29,16 @@ def parse_duration(s: str) -> timedelta:
     return n * _DURATION_UNITS[unit]
 
 
+def parse_positive_int(s: str) -> int:
+    try:
+        n = int(s.strip())
+    except ValueError as exc:
+        raise ConfigError(f"expected an integer: {s!r}") from exc
+    if n <= 0:
+        raise ConfigError(f"must be positive: {s!r}")
+    return n
+
+
 def parse_duration_list(s: str) -> list[timedelta]:
     parts = [p for p in (x.strip() for x in s.split(",")) if p]
     if not parts:
@@ -49,21 +59,40 @@ class Config:
     block_stall_remind_after: list[timedelta] | None
     finality_stall_threshold: timedelta | None
     finality_stall_remind_after: list[timedelta] | None
+    catchup_max_block_age: timedelta
+    catchup_max_block_gap: int
+    catchup_checkpoints: list[timedelta]
+    catchup_no_progress_after: timedelta
+    catchup_no_progress_remind_after: list[timedelta]
+    tunnel_health_poll: timedelta
+    tunnel_restart_backoff: list[timedelta]
     rpc_url: str = "ws://127.0.0.1:9944"
 
 
 _DEFAULTS: dict[str, str] = {
     "NODE_NAME": "humanode-validator",
     "SYNC_MODE": "full",
-    "BIOAUTH_REMIND_BEFORE": "",
-    "BIOAUTH_REMIND_AFTER": "",
+    "BIOAUTH_REMIND_BEFORE": "1s",
+    "BIOAUTH_REMIND_AFTER": "15m,45m,2h,3h,6h,12h,2d,4d",
     "BLOCK_STALL_THRESHOLD": "",
     "BLOCK_STALL_REMIND_AFTER": "",
     "FINALITY_STALL_THRESHOLD": "",
     "FINALITY_STALL_REMIND_AFTER": "",
+    "CATCHUP_MAX_BLOCK_AGE": "2m",
+    "CATCHUP_MAX_BLOCK_GAP": "20",
+    "CATCHUP_CHECKPOINTS": "1d,6h,1h,15m",
+    "CATCHUP_NO_PROGRESS_AFTER": "30m",
+    "CATCHUP_NO_PROGRESS_REMIND_AFTER": "30m,1h,2h",
+    "TUNNEL_HEALTH_POLL": "30s",
+    "TUNNEL_RESTART_BACKOFF": "30s,1m,5m,15m,30m",
 }
 
+_MIN_CATCHUP_BLOCK_AGE = timedelta(seconds=6)
+_MAX_CATCHUP_BLOCK_AGE = timedelta(hours=1)
+
 _VALID_SYNC_MODES = {"warp", "full", "fast", "fast-unsafe"}
+
+_DISABLED = {"off", "none"}
 
 
 def _require(env: dict[str, str], key: str) -> str:
@@ -75,6 +104,16 @@ def _require(env: dict[str, str], key: str) -> str:
 
 def _optional(env: dict[str, str], key: str) -> str:
     return env.get(key, _DEFAULTS[key]).strip() or _DEFAULTS[key]
+
+
+def _optional_duration_list(env: dict[str, str], key: str) -> list[timedelta] | None:
+    v = _optional(env, key)
+    return None if not v or v.lower() in _DISABLED else parse_duration_list(v)
+
+
+def _optional_duration(env: dict[str, str], key: str) -> timedelta | None:
+    v = _optional(env, key)
+    return None if not v or v.lower() in _DISABLED else parse_duration(v)
 
 
 def load_config(env: dict[str, str] | None = None) -> Config:
@@ -93,16 +132,32 @@ def load_config(env: dict[str, str] | None = None) -> Config:
     if sync_mode not in _VALID_SYNC_MODES:
         raise ConfigError(f"SYNC_MODE must be one of {sorted(_VALID_SYNC_MODES)}")
 
+    catchup_max_block_age = parse_duration(_optional(e, "CATCHUP_MAX_BLOCK_AGE"))
+    if not _MIN_CATCHUP_BLOCK_AGE <= catchup_max_block_age <= _MAX_CATCHUP_BLOCK_AGE:
+        raise ConfigError(
+            "CATCHUP_MAX_BLOCK_AGE must be between "
+            f"{_MIN_CATCHUP_BLOCK_AGE} and {_MAX_CATCHUP_BLOCK_AGE}"
+        )
+
     return Config(
         telegram_bot_token=telegram_bot_token,
         telegram_user_id=telegram_user_id,
         ngrok_authtoken=ngrok_authtoken,
         node_name=_optional(e, "NODE_NAME"),
         sync_mode=sync_mode,
-        bioauth_remind_before=parse_duration_list(v) if (v := _optional(e, "BIOAUTH_REMIND_BEFORE")) else None,
-        bioauth_remind_after=parse_duration_list(v) if (v := _optional(e, "BIOAUTH_REMIND_AFTER")) else None,
-        block_stall_threshold=parse_duration(v) if (v := _optional(e, "BLOCK_STALL_THRESHOLD")) else None,
-        block_stall_remind_after=parse_duration_list(v) if (v := _optional(e, "BLOCK_STALL_REMIND_AFTER")) else None,
-        finality_stall_threshold=parse_duration(v) if (v := _optional(e, "FINALITY_STALL_THRESHOLD")) else None,
-        finality_stall_remind_after=parse_duration_list(v) if (v := _optional(e, "FINALITY_STALL_REMIND_AFTER")) else None,
+        bioauth_remind_before=_optional_duration_list(e, "BIOAUTH_REMIND_BEFORE"),
+        bioauth_remind_after=_optional_duration_list(e, "BIOAUTH_REMIND_AFTER"),
+        block_stall_threshold=_optional_duration(e, "BLOCK_STALL_THRESHOLD"),
+        block_stall_remind_after=_optional_duration_list(e, "BLOCK_STALL_REMIND_AFTER"),
+        finality_stall_threshold=_optional_duration(e, "FINALITY_STALL_THRESHOLD"),
+        finality_stall_remind_after=_optional_duration_list(e, "FINALITY_STALL_REMIND_AFTER"),
+        catchup_max_block_age=catchup_max_block_age,
+        catchup_max_block_gap=parse_positive_int(_optional(e, "CATCHUP_MAX_BLOCK_GAP")),
+        catchup_checkpoints=parse_duration_list(_optional(e, "CATCHUP_CHECKPOINTS")),
+        catchup_no_progress_after=parse_duration(_optional(e, "CATCHUP_NO_PROGRESS_AFTER")),
+        catchup_no_progress_remind_after=parse_duration_list(
+            _optional(e, "CATCHUP_NO_PROGRESS_REMIND_AFTER")
+        ),
+        tunnel_health_poll=parse_duration(_optional(e, "TUNNEL_HEALTH_POLL")),
+        tunnel_restart_backoff=parse_duration_list(_optional(e, "TUNNEL_RESTART_BACKOFF")),
     )

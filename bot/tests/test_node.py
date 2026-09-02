@@ -1,8 +1,15 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hmnd_bot.node import BioauthStatus, NodeClient
+from hmnd_bot.node import (
+    BioauthStatus,
+    NodeClient,
+    NodeRpcError,
+    NodeUnavailable,
+    SyncState,
+)
 
 
 @pytest.fixture
@@ -51,3 +58,88 @@ async def test_bioauth_status_active(client):
 def test_ws_url_rewritten_to_http():
     c = NodeClient("ws://127.0.0.1:9944")
     assert c._url == "http://127.0.0.1:9944"
+
+
+NOW = datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc)
+
+
+def _encode_ts(moment: datetime) -> str:
+    millis = int(moment.timestamp() * 1000)
+    return "0x" + millis.to_bytes(8, "little").hex()
+
+
+@pytest.mark.parametrize("lag", [timedelta(seconds=30), timedelta(hours=4)])
+async def test_best_block_age_reports_lag(client, lag):
+    raw = _encode_ts(NOW - lag)
+    with patch.object(client, "call", new=AsyncMock(return_value=raw)):
+        age = await client.best_block_age(NOW)
+    assert age is not None
+    assert abs(age - lag) < timedelta(milliseconds=2)
+
+
+async def test_best_block_age_null_storage_is_unreadable(client):
+    with patch.object(client, "call", new=AsyncMock(return_value=None)):
+        assert await client.best_block_age(NOW) is None
+
+
+async def test_best_block_age_undecodable_is_unreadable(client):
+    with patch.object(client, "call", new=AsyncMock(return_value="0xdeadbeef")):
+        assert await client.best_block_age(NOW) is None
+
+
+async def test_best_block_age_future_timestamp_is_unreadable(client):
+    raw = _encode_ts(NOW + timedelta(hours=1))
+    with patch.object(client, "call", new=AsyncMock(return_value=raw)):
+        assert await client.best_block_age(NOW) is None
+
+
+async def test_best_block_age_absurdly_old_is_unreadable(client):
+    raw = _encode_ts(NOW - timedelta(days=4000))
+    with patch.object(client, "call", new=AsyncMock(return_value=raw)):
+        assert await client.best_block_age(NOW) is None
+
+
+async def test_best_block_age_propagates_transport_error(client):
+    with patch.object(client, "call", new=AsyncMock(side_effect=NodeUnavailable("down"))):
+        with pytest.raises(NodeUnavailable):
+            await client.best_block_age(NOW)
+
+
+async def test_best_block_age_propagates_rpc_error(client):
+    with patch.object(client, "call", new=AsyncMock(side_effect=NodeRpcError("no method"))):
+        with pytest.raises(NodeRpcError):
+            await client.best_block_age(NOW)
+
+
+async def test_sync_state_reports_gap(client):
+    payload = {"startingBlock": 0, "currentBlock": 1000, "highestBlock": 1500}
+    with patch.object(client, "call", new=AsyncMock(return_value=payload)):
+        st = await client.sync_state()
+    assert st == SyncState(current=1000, highest=1500, gap=500)
+
+
+async def test_sync_state_equal_heights_gives_zero_gap(client):
+    payload = {"currentBlock": 2000, "highestBlock": 2000}
+    with patch.object(client, "call", new=AsyncMock(return_value=payload)):
+        st = await client.sync_state()
+    assert st.gap == 0
+
+
+async def test_sync_state_missing_highest_falls_back_to_current(client):
+    payload = {"currentBlock": 2000}
+    with patch.object(client, "call", new=AsyncMock(return_value=payload)):
+        st = await client.sync_state()
+    assert st.gap == 0
+
+
+async def test_sync_state_behind_tip_never_reports_negative_gap(client):
+    payload = {"currentBlock": 2100, "highestBlock": 2000}
+    with patch.object(client, "call", new=AsyncMock(return_value=payload)):
+        st = await client.sync_state()
+    assert st.gap == 0
+
+
+async def test_sync_state_propagates_transport_error(client):
+    with patch.object(client, "call", new=AsyncMock(side_effect=NodeUnavailable("down"))):
+        with pytest.raises(NodeUnavailable):
+            await client.sync_state()

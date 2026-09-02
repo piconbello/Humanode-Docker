@@ -26,6 +26,7 @@ else
     echo "tunnel: using humanode-websocket-tunnel (default)"
     TUNNEL_SERVER_ADDR="main.ws-tunnel.humanode.io:8000" \
     TUNNEL_SERVER_IP_FAMILY="IPv4" \
+    TUNNEL_MAX_IDLE_TIMEOUT="${TUNNEL_MAX_IDLE_TIMEOUT:-60s}" \
     TARGET_URL="ws://127.0.0.1:9944" \
     humanode-websocket-tunnel-client &
     TUNNEL_PID=$!

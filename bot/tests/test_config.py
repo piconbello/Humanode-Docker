@@ -48,7 +48,12 @@ def test_load_config_applies_defaults():
     assert cfg.telegram_user_id == 4242
     assert cfg.node_name == "humanode-validator"
     assert cfg.sync_mode == "full"
-    assert cfg.bioauth_remind_before is None
+    assert cfg.bioauth_remind_before == [timedelta(seconds=1)]
+    assert cfg.bioauth_remind_after == [
+        timedelta(minutes=15), timedelta(minutes=45), timedelta(hours=2),
+        timedelta(hours=3), timedelta(hours=6), timedelta(hours=12),
+        timedelta(days=2), timedelta(days=4),
+    ]
     assert cfg.block_stall_threshold is None
     assert cfg.rpc_url == "ws://127.0.0.1:9944"
 
@@ -95,3 +100,145 @@ def test_config_is_frozen():
     with pytest.raises(Exception):
         cfg.node_name = "hacked"
     assert isinstance(cfg, Config)
+
+
+def test_catchup_defaults():
+    cfg = load_config(BASE_ENV)
+    assert cfg.catchup_max_block_age == timedelta(minutes=2)
+    assert cfg.catchup_max_block_gap == 20
+
+
+def test_catchup_notification_defaults():
+    cfg = load_config(BASE_ENV)
+    assert cfg.catchup_checkpoints == [
+        timedelta(days=1), timedelta(hours=6), timedelta(hours=1), timedelta(minutes=15)
+    ]
+    assert cfg.catchup_no_progress_after == timedelta(minutes=30)
+    assert cfg.catchup_no_progress_remind_after == [
+        timedelta(minutes=30), timedelta(hours=1), timedelta(hours=2)
+    ]
+
+
+def test_catchup_overrides():
+    cfg = load_config({**BASE_ENV, "CATCHUP_MAX_BLOCK_AGE": "45s", "CATCHUP_MAX_BLOCK_GAP": "100"})
+    assert cfg.catchup_max_block_age == timedelta(seconds=45)
+    assert cfg.catchup_max_block_gap == 100
+
+
+
+
+def test_catchup_max_block_age_above_ceiling_rejected():
+    with pytest.raises(ConfigError):
+        load_config({**BASE_ENV, "CATCHUP_MAX_BLOCK_AGE": "30d"})
+
+
+def test_catchup_max_block_age_below_floor_rejected():
+    with pytest.raises(ConfigError):
+        load_config({**BASE_ENV, "CATCHUP_MAX_BLOCK_AGE": "1s"})
+
+
+def test_catchup_max_block_gap_rejects_non_integer():
+    with pytest.raises(ConfigError):
+        load_config({**BASE_ENV, "CATCHUP_MAX_BLOCK_GAP": "twenty"})
+
+
+def test_catchup_max_block_gap_rejects_zero():
+    with pytest.raises(ConfigError):
+        load_config({**BASE_ENV, "CATCHUP_MAX_BLOCK_GAP": "0"})
+
+
+def test_catchup_checkpoints_reject_malformed():
+    with pytest.raises(ConfigError):
+        load_config({**BASE_ENV, "CATCHUP_CHECKPOINTS": "1d,banana"})
+
+
+def test_tunnel_health_defaults_are_active():
+    cfg = load_config(BASE_ENV)
+    assert cfg.tunnel_health_poll == timedelta(seconds=30)
+    assert cfg.tunnel_restart_backoff == [
+        timedelta(seconds=30),
+        timedelta(minutes=1),
+        timedelta(minutes=5),
+        timedelta(minutes=15),
+        timedelta(minutes=30),
+    ]
+
+
+def test_tunnel_health_settings_are_overridable():
+    cfg = load_config(BASE_ENV | {
+        "TUNNEL_HEALTH_POLL": "10s",
+        "TUNNEL_RESTART_BACKOFF": "1m,10m",
+    })
+    assert cfg.tunnel_health_poll == timedelta(seconds=10)
+    assert cfg.tunnel_restart_backoff == [timedelta(minutes=1), timedelta(minutes=10)]
+
+
+def test_malformed_tunnel_backoff_is_rejected():
+    with pytest.raises(ConfigError):
+        load_config(BASE_ENV | {"TUNNEL_RESTART_BACKOFF": "1m,junk"})
+
+
+def test_ngrok_authtoken_remains_optional():
+    assert load_config(BASE_ENV).ngrok_authtoken == ""
+
+
+def test_bioauth_reminders_are_on_by_default():
+    cfg = load_config(BASE_ENV)
+    assert cfg.bioauth_remind_after
+    assert cfg.bioauth_remind_before == [timedelta(seconds=1)]
+
+
+def test_default_after_ladder_fires_at_the_intended_absolute_times():
+    cfg = load_config(BASE_ENV)
+    cum, fires = timedelta(), []
+    for d in cfg.bioauth_remind_after:
+        cum += d
+        fires.append(cum)
+    assert fires == [
+        timedelta(minutes=15), timedelta(hours=1), timedelta(hours=3),
+        timedelta(hours=6), timedelta(hours=12), timedelta(days=1),
+        timedelta(days=3), timedelta(days=7),
+    ]
+
+
+def test_bioauth_reminders_can_be_disabled_explicitly():
+    for word in ("off", "none", "OFF", "None"):
+        cfg = load_config(BASE_ENV | {
+            "BIOAUTH_REMIND_BEFORE": word,
+            "BIOAUTH_REMIND_AFTER": word,
+        })
+        assert cfg.bioauth_remind_before is None, word
+        assert cfg.bioauth_remind_after is None, word
+
+
+def test_empty_reminder_value_falls_back_to_default_not_off():
+    cfg = load_config(BASE_ENV | {"BIOAUTH_REMIND_AFTER": ""})
+    assert len(cfg.bioauth_remind_after) == 8
+
+
+def test_zero_and_week_are_rejected():
+    for bad in ("0s", "0m", "1w"):
+        with pytest.raises(ConfigError):
+            parse_duration(bad)
+
+
+def test_before_only_ladder_is_allowed():
+    cfg = load_config(BASE_ENV | {"BIOAUTH_REMIND_BEFORE": "1h", "BIOAUTH_REMIND_AFTER": "off"})
+    assert cfg.bioauth_remind_before == [timedelta(hours=1)]
+    assert cfg.bioauth_remind_after is None
+
+
+def test_stall_alerts_remain_opt_in():
+    cfg = load_config(BASE_ENV)
+    assert cfg.block_stall_threshold is None
+    assert cfg.finality_stall_threshold is None
+
+
+def test_stall_alerts_can_be_disabled_explicitly():
+    cfg = load_config(BASE_ENV | {"BLOCK_STALL_THRESHOLD": "off"})
+    assert cfg.block_stall_threshold is None
+
+
+def test_reminder_override_still_parses():
+    cfg = load_config(BASE_ENV | {"BIOAUTH_REMIND_BEFORE": "45m,10m"})
+    assert cfg.bioauth_remind_before == [timedelta(minutes=45), timedelta(minutes=10)]

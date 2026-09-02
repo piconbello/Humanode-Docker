@@ -13,6 +13,7 @@ from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.types import BotCommand, BotCommandScopeChat, BufferedInputFile
 
 from .bioauth import BioauthScheduler
+from .catchup import CatchupDetector
 from .bioauth_url import DEFAULT_WEBAPP_BASE
 from .commands import build_router
 from .config import ConfigError, load_config
@@ -20,7 +21,8 @@ from .first_sync import FirstSyncWatcher
 from .logging import configure_logging
 from .node import NodeClient, NodeUnavailable
 from .stall import StallDetector
-from .tunnel import NgrokTunnel
+from .tunnel import NativeTunnel, NgrokTunnel, Tunnel
+from .tunnel_watch import TunnelWatcher
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +101,12 @@ async def main() -> int:
         return 1
     logger.info("node RPC reachable")
 
-    tunnel = NgrokTunnel(cfg.ngrok_authtoken)
+    tunnel: Tunnel = (
+        NgrokTunnel(cfg.ngrok_authtoken, on_url=redaction.register_exact)
+        if cfg.ngrok_authtoken
+        else NativeTunnel(on_url=redaction.register_exact)
+    )
+    logger.info("tunnel backend: %s", tunnel.backend)
     webapp_base = os.environ.get("BIOAUTH_WEBAPP_BASE", DEFAULT_WEBAPP_BASE)
 
     async def send_text(text: str) -> None:
@@ -114,12 +121,21 @@ async def main() -> int:
 
     first_sync = FirstSyncWatcher(node=node, notify=send_text)
 
+    catchup = CatchupDetector(
+        node=node,
+        max_block_age=cfg.catchup_max_block_age,
+        max_block_gap=cfg.catchup_max_block_gap,
+        checkpoints=cfg.catchup_checkpoints,
+        no_progress_after=cfg.catchup_no_progress_after,
+        no_progress_cadence=cfg.catchup_no_progress_remind_after,
+    )
+
     dp = Dispatcher()
     dp.include_router(build_router(
         chat_id=cfg.telegram_user_id,
         node=node,
         tunnel=tunnel,
-        first_sync=first_sync,
+        catchup=catchup,
         webapp_base=webapp_base,
     ))
 
@@ -128,11 +144,21 @@ async def main() -> int:
         name="telegram-polling",
     )
     first_sync_task = asyncio.create_task(first_sync.run(), name="first-sync")
-    tasks = [polling_task, first_sync_task]
+    catchup_task = asyncio.create_task(catchup.run(), name="catchup")
+    tasks = [polling_task, first_sync_task, catchup_task]
 
-    if cfg.bioauth_remind_before and cfg.bioauth_remind_after:
+    if tunnel.backend == "native":
+        tunnel_watch = TunnelWatcher(
+            tunnel=tunnel,
+            notify=send_text,
+            backoff=cfg.tunnel_restart_backoff,
+            poll_interval=cfg.tunnel_health_poll,
+        )
+        tasks.append(asyncio.create_task(tunnel_watch.run(), name="tunnel-health"))
+
+    if cfg.bioauth_remind_before or cfg.bioauth_remind_after:
         bioauth = BioauthScheduler(
-            node=node, tunnel=tunnel, first_sync=first_sync,
+            node=node, tunnel=tunnel, catchup=catchup,
             send_photo=send_photo, send_text=send_text,
             remind_before=cfg.bioauth_remind_before,
             remind_after=cfg.bioauth_remind_after,

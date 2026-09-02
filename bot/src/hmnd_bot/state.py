@@ -31,3 +31,11 @@ def write_flag(path: str | os.PathLike[str], value: str, *, mode: int = 0o600) -
         except FileNotFoundError:
             pass
         raise
+
+
+def clear_flag(path: str | os.PathLike[str]) -> bool:
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        return False
+    return True
