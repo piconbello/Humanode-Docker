@@ -66,6 +66,11 @@ class Config:
     catchup_no_progress_remind_after: list[timedelta]
     tunnel_health_poll: timedelta
     tunnel_restart_backoff: list[timedelta]
+    gov_new_proposals: bool
+    gov_stage_changes: bool
+    gov_milestones: bool
+    gov_poll_interval: timedelta
+    gov_api_base: str
     rpc_url: str = "ws://127.0.0.1:9944"
 
 
@@ -88,6 +93,8 @@ _DEFAULTS: dict[str, str] = {
     "CATCHUP_NO_PROGRESS_REMIND_AFTER": "30m,1h,2h",
     "TUNNEL_HEALTH_POLL": "30s",
     "TUNNEL_RESTART_BACKOFF": "30s,1m,5m,15m,30m",
+    "GOV_POLL_INTERVAL": "15m",
+    "GOV_API_BASE": "https://vortex-simulator.humanode.io",
 }
 
 _MIN_CATCHUP_BLOCK_AGE = timedelta(seconds=6)
@@ -96,6 +103,10 @@ _MAX_CATCHUP_BLOCK_AGE = timedelta(hours=1)
 _VALID_SYNC_MODES = {"warp", "full", "fast", "fast-unsafe"}
 
 _DISABLED = {"off", "none"}
+
+
+def _bool_flag(env: dict[str, str], key: str) -> bool:
+    return bool(env.get(key, "").strip())
 
 
 def _require(env: dict[str, str], key: str) -> str:
@@ -168,4 +179,9 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         ),
         tunnel_health_poll=parse_duration(_optional(e, "TUNNEL_HEALTH_POLL")),
         tunnel_restart_backoff=parse_duration_list(_optional(e, "TUNNEL_RESTART_BACKOFF")),
+        gov_new_proposals=_bool_flag(e, "GOV_NEW_PROPOSALS"),
+        gov_stage_changes=_bool_flag(e, "GOV_STAGE_CHANGES"),
+        gov_milestones=_bool_flag(e, "GOV_MILESTONES"),
+        gov_poll_interval=parse_duration(_optional(e, "GOV_POLL_INTERVAL")),
+        gov_api_base=_optional(e, "GOV_API_BASE"),
     )

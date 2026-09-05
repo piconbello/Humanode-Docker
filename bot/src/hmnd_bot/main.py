@@ -18,6 +18,7 @@ from .bioauth_url import DEFAULT_WEBAPP_BASE
 from .commands import build_router
 from .config import ConfigError, load_config
 from .first_sync import FirstSyncWatcher
+from .governance import GovernanceWatcher
 from .logging import configure_logging
 from .node import NodeClient, NodeUnavailable
 from .stall import FinalityLagDetector, StallDetector
@@ -184,6 +185,17 @@ async def main() -> int:
             notify=send_text,
         )
         tasks.append(asyncio.create_task(finality_lag.run(), name="finality-lag"))
+
+    if cfg.gov_new_proposals or cfg.gov_stage_changes or cfg.gov_milestones:
+        gov = GovernanceWatcher(
+            new_proposals=cfg.gov_new_proposals,
+            stage_changes=cfg.gov_stage_changes,
+            milestones=cfg.gov_milestones,
+            poll_interval=cfg.gov_poll_interval,
+            api_base=cfg.gov_api_base,
+            notify=send_text,
+        )
+        tasks.append(asyncio.create_task(gov.run(), name="governance"))
 
     stop = asyncio.Event()
 

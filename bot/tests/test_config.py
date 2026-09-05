@@ -254,3 +254,42 @@ def test_finality_max_lag_override_parses():
 def test_reminder_override_still_parses():
     cfg = load_config(BASE_ENV | {"BIOAUTH_REMIND_BEFORE": "45m,10m"})
     assert cfg.bioauth_remind_before == [timedelta(minutes=45), timedelta(minutes=10)]
+
+
+def test_governance_defaults_are_disabled():
+    cfg = load_config(BASE_ENV)
+    assert cfg.gov_new_proposals is False
+    assert cfg.gov_stage_changes is False
+    assert cfg.gov_milestones is False
+    assert cfg.gov_poll_interval == timedelta(minutes=15)
+    assert cfg.gov_api_base == "https://vortex-simulator.humanode.io"
+
+
+def test_governance_tiers_enabled_by_any_nonempty_value():
+    cfg = load_config(BASE_ENV | {
+        "GOV_NEW_PROPOSALS": "on",
+        "GOV_STAGE_CHANGES": "yes",
+        "GOV_MILESTONES": "1",
+    })
+    assert cfg.gov_new_proposals is True
+    assert cfg.gov_stage_changes is True
+    assert cfg.gov_milestones is True
+
+
+def test_governance_tiers_disabled_by_empty_or_whitespace():
+    cfg = load_config(BASE_ENV | {
+        "GOV_NEW_PROPOSALS": "",
+        "GOV_STAGE_CHANGES": "   ",
+    })
+    assert cfg.gov_new_proposals is False
+    assert cfg.gov_stage_changes is False
+
+
+def test_governance_poll_interval_override():
+    cfg = load_config(BASE_ENV | {"GOV_POLL_INTERVAL": "5m"})
+    assert cfg.gov_poll_interval == timedelta(minutes=5)
+
+
+def test_governance_api_base_override():
+    cfg = load_config(BASE_ENV | {"GOV_API_BASE": "https://vortex.humanode.io"})
+    assert cfg.gov_api_base == "https://vortex.humanode.io"
