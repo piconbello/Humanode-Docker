@@ -31,7 +31,7 @@ RUN curl -fsSL -o /tmp/hmnd-tunnel \
     && install -m 0755 /tmp/hmnd-tunnel /usr/local/bin/humanode-websocket-tunnel-client \
     && rm /tmp/hmnd-tunnel
 
-COPY artifacts/humanode-version.txt /build/humanode-version.txt
+COPY artifacts/humanode-peer.env artifacts/chainspec.json /build/
 COPY build/fetch-upstream.sh /build/fetch-upstream.sh
 RUN chmod +x /build/fetch-upstream.sh && /build/fetch-upstream.sh \
     && rm -rf /build
@@ -42,6 +42,13 @@ RUN pip3 install --no-cache-dir --break-system-packages /opt/hmnd_bot \
 
 # ── Runtime stage: minimal surface ──
 FROM ubuntu:24.04
+
+ARG IMAGE_VERSION=dev
+ARG PEER_TAG=unknown
+ARG PEER_COMMIT=unknown
+LABEL io.humanode.image.version=$IMAGE_VERSION \
+      io.humanode.peer.tag=$PEER_TAG \
+      io.humanode.peer.commit=$PEER_COMMIT
 
 ENV S6_KILL_GRACETIME=30000 \
     S6_SERVICES_GRACETIME=30000 \
@@ -65,6 +72,7 @@ COPY --from=build /package /package
 COPY --from=build /etc/s6-overlay /etc/s6-overlay
 COPY --from=build /usr/local/bin/humanode-peer /usr/local/bin/humanode-peer
 COPY --from=build /etc/humanode/chainspec.json /etc/humanode/chainspec.json
+COPY --from=build /etc/humanode/peer.env /etc/humanode/peer.env
 COPY --from=build /usr/local/bin/ngrok-real /usr/local/bin/ngrok-real
 COPY --from=build /usr/local/bin/humanode-websocket-tunnel-client /usr/local/bin/humanode-websocket-tunnel-client
 COPY --from=build /usr/local/lib/python3.12 /usr/local/lib/python3.12
@@ -84,5 +92,7 @@ RUN chmod 0755 /entrypoint.sh /usr/local/bin/insert-key.sh \
 VOLUME ["/data"]
 
 EXPOSE 30333/tcp
+
+RUN printf '%s\n' "$IMAGE_VERSION" > /etc/humanode/image-version
 
 ENTRYPOINT ["/entrypoint.sh"]

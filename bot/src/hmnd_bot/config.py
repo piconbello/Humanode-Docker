@@ -66,6 +66,7 @@ class Config:
     catchup_no_progress_remind_after: list[timedelta]
     tunnel_health_poll: timedelta
     tunnel_restart_backoff: list[timedelta]
+    update_check_interval: timedelta | None
     rpc_url: str = "ws://127.0.0.1:9944"
 
 
@@ -85,6 +86,7 @@ _DEFAULTS: dict[str, str] = {
     "CATCHUP_NO_PROGRESS_REMIND_AFTER": "30m,1h,2h",
     "TUNNEL_HEALTH_POLL": "30s",
     "TUNNEL_RESTART_BACKOFF": "30s,1m,5m,15m,30m",
+    "UPDATE_CHECK_INTERVAL": "6h",
 }
 
 _MIN_CATCHUP_BLOCK_AGE = timedelta(seconds=6)
@@ -160,4 +162,5 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         ),
         tunnel_health_poll=parse_duration(_optional(e, "TUNNEL_HEALTH_POLL")),
         tunnel_restart_backoff=parse_duration_list(_optional(e, "TUNNEL_RESTART_BACKOFF")),
+        update_check_interval=_optional_duration(e, "UPDATE_CHECK_INTERVAL"),
     )
