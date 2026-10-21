@@ -58,6 +58,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Keep the hourly schedule alive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/upstream-release-watch.yml/enable"
+
       - name: Compare pinned peer with mainnet manifest
         id: detect
         env:
