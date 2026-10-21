@@ -43,9 +43,11 @@ RUN pip3 install --no-cache-dir --break-system-packages /opt/hmnd_bot \
 # ── Runtime stage: minimal surface ──
 FROM ubuntu:24.04
 
+ARG IMAGE_VERSION=dev
 ARG PEER_TAG=unknown
 ARG PEER_COMMIT=unknown
-LABEL io.humanode.peer.tag=$PEER_TAG \
+LABEL io.humanode.image.version=$IMAGE_VERSION \
+      io.humanode.peer.tag=$PEER_TAG \
       io.humanode.peer.commit=$PEER_COMMIT
 
 ENV S6_KILL_GRACETIME=30000 \
@@ -90,5 +92,7 @@ RUN chmod 0755 /entrypoint.sh /usr/local/bin/insert-key.sh \
 VOLUME ["/data"]
 
 EXPOSE 30333/tcp
+
+RUN printf '%s\n' "$IMAGE_VERSION" > /etc/humanode/image-version
 
 ENTRYPOINT ["/entrypoint.sh"]

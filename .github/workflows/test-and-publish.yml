@@ -170,6 +170,7 @@ jobs:
           platforms: linux/amd64
           push: true
           build-args: |
+            IMAGE_VERSION=${{ steps.version.outputs.internal }}
             PEER_TAG=${{ steps.version.outputs.peer_tag }}
             PEER_COMMIT=${{ steps.version.outputs.peer_commit }}
           tags: |
@@ -209,14 +210,3 @@ jobs:
             --title "$TAG" \
             --notes "$NOTES" \
             --latest
-      - name: Notify Telegram
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          IMAGE="ghcr.io/${{ steps.repo.outputs.name }}"
-          sh .github/scripts/telegram-notify.sh "New Humanode validator image: ${{ steps.version.outputs.internal }}
-          humanode-peer ${{ steps.version.outputs.peer_tag }} (${{ steps.version.outputs.peer_short }})
-
-          docker pull $IMAGE:latest
-          ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.version.outputs.internal }}"

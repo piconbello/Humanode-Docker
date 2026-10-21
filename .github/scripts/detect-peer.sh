@@ -47,6 +47,17 @@ if [ "$peer_sha" != "$PEER_SHA256" ]; then
     commit="$(gh api "repos/$PEER_REPO/commits/$tag" --jq .sha)"
 fi
 
+check() {
+    if ! printf '%s' "$2" | grep -Eqx "$3"; then
+        echo "detect-peer: refusing malformed $1: $2" >&2
+        exit 1
+    fi
+}
+check "peer sha256" "$peer_sha" '[0-9a-f]{64}'
+check "chainspec sha256" "$cs_sha" '[0-9a-f]{64}'
+check "release tag" "$tag" '[A-Za-z0-9._-]{1,100}'
+check "commit" "$commit" '[0-9a-f]{40}'
+
 cat > "$PEER_FILE" <<PIN
 PEER_TAG=$tag
 PEER_COMMIT=$commit

@@ -92,11 +92,3 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run test-and-publish.yml --repo "${{ github.repository }}" --ref "chore/peer-${{ steps.detect.outputs.short }}"
-
-      - name: Notify on failure
-        if: failure()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          sh .github/scripts/telegram-notify.sh "Humanode peer watcher failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
