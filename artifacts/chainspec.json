@@ -20,6 +20,7 @@
     "tokenSymbol": "HMND"
   },
   "robonodeUrl": "https://robonode.mainnet.stages.humanode.io",
+  "biometricsApiUrl": "https://biometrics.mainnet.stages.humanode.io",
   "webappUrl": "https://webapp.mainnet.stages.humanode.io",
   "codeSubstitutes": {},
   "genesis": {
