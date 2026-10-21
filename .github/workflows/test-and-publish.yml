@@ -112,12 +112,13 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Check PR only touches the peer pin
+      - name: Check PR only touches the peer pin and chainspec
         run: |
           files="$(gh pr diff "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --name-only)"
           echo "$files"
-          if [ "$files" != "artifacts/humanode-peer.env" ]; then
-            echo "::error::peer bump PR touches more than artifacts/humanode-peer.env; leaving it for a human"
+          extra="$(printf '%s\n' "$files" | grep -vx 'artifacts/humanode-peer.env' | grep -vx 'artifacts/chainspec.json' || true)"
+          if [ -n "$extra" ]; then
+            echo "::error::peer bump PR touches files other than the peer pin and chainspec; leaving it for a human"
             exit 1
           fi
       - name: Merge

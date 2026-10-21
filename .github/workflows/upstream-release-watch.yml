@@ -72,7 +72,9 @@ jobs:
           commit-message: "chore(peer): ${{ steps.detect.outputs.tag }} (${{ steps.detect.outputs.short }})"
           title: "chore(peer): ${{ steps.detect.outputs.tag }} (${{ steps.detect.outputs.short }}) [automated]"
           branch: chore/peer-${{ steps.detect.outputs.short }}
-          add-paths: artifacts/humanode-peer.env
+          add-paths: |
+            artifacts/humanode-peer.env
+            artifacts/chainspec.json
           delete-branch: true
           body: |
             Mainnet manifest now ships a different humanode-peer / chainspec. Merges automatically once CI is green.

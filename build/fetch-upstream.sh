@@ -6,7 +6,7 @@ OUT_BIN="${OUT_BIN:-/usr/local/bin/humanode-peer}"
 OUT_CHAINSPEC="${OUT_CHAINSPEC:-/etc/humanode/chainspec.json}"
 PEER_REPO="${PEER_REPO:-humanode-network/humanode}"
 PEER_ASSET="${PEER_ASSET:-humanode-peer-x86_64-unknown-linux-gnu-ubuntu2404.tar.gz}"
-CHAINSPEC_URL="${CHAINSPEC_URL:-https://chainspec.mainnet.stages.humanode.io/latest/chainspec.json}"
+CHAINSPEC_FILE="${CHAINSPEC_FILE:-/build/chainspec.json}"
 
 if [ ! -f "$PEER_FILE" ]; then
     echo "fetch-upstream: peer pin file not found at $PEER_FILE" >&2
@@ -45,13 +45,11 @@ if [ ! -f "$WORK/humanode-peer" ]; then
 fi
 verify "$WORK/humanode-peer" "$PEER_SHA256" humanode-peer
 
-echo "fetch-upstream: downloading $CHAINSPEC_URL"
-curl -fsSL --retry 3 "$CHAINSPEC_URL" -o "$WORK/chainspec.json"
-verify "$WORK/chainspec.json" "$CHAINSPEC_SHA256" chainspec.json
+verify "$CHAINSPEC_FILE" "$CHAINSPEC_SHA256" chainspec.json
 
 mkdir -p "$(dirname "$OUT_BIN")" "$(dirname "$OUT_CHAINSPEC")"
 install -m 0755 "$WORK/humanode-peer" "$OUT_BIN"
-install -m 0644 "$WORK/chainspec.json" "$OUT_CHAINSPEC"
+install -m 0644 "$CHAINSPEC_FILE" "$OUT_CHAINSPEC"
 install -m 0644 "$PEER_FILE" "$(dirname "$OUT_CHAINSPEC")/peer.env"
 
 "$OUT_BIN" --version > /dev/null 2>&1 || {

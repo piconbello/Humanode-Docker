@@ -31,7 +31,7 @@ RUN curl -fsSL -o /tmp/hmnd-tunnel \
     && install -m 0755 /tmp/hmnd-tunnel /usr/local/bin/humanode-websocket-tunnel-client \
     && rm /tmp/hmnd-tunnel
 
-COPY artifacts/humanode-peer.env /build/humanode-peer.env
+COPY artifacts/humanode-peer.env artifacts/chainspec.json /build/
 COPY build/fetch-upstream.sh /build/fetch-upstream.sh
 RUN chmod +x /build/fetch-upstream.sh && /build/fetch-upstream.sh \
     && rm -rf /build
