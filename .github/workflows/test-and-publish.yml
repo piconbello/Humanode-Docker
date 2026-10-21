@@ -121,9 +121,19 @@ jobs:
             exit 1
           fi
       - name: Merge
-        run: gh pr merge "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "$GITHUB_SHA"
+        id: merge
+        run: |
+          echo "base=$(gh pr view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json baseRefName --jq .baseRefName)" >> "$GITHUB_OUTPUT"
+          gh pr merge "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "$GITHUB_SHA"
       - name: Publish from main
-        run: gh workflow run test-and-publish.yml --repo "$GITHUB_REPOSITORY" --ref main
+        env:
+          PR_BASE: ${{ steps.merge.outputs.base }}
+        run: |
+          if [ "$PR_BASE" != "main" ]; then
+            echo "merged into $PR_BASE, not main; skipping publish"
+            exit 0
+          fi
+          gh workflow run test-and-publish.yml --repo "$GITHUB_REPOSITORY" --ref main
 
   publish:
     name: Publish to GHCR
