@@ -24,6 +24,7 @@ from .node import NodeClient, NodeUnavailable
 from .stall import FinalityLagDetector, StallDetector
 from .tunnel import NativeTunnel, NgrokTunnel, Tunnel
 from .tunnel_watch import TunnelWatcher
+from .update_watch import UpdateWatcher
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,10 @@ async def main() -> int:
             notify=send_text,
         )
         tasks.append(asyncio.create_task(gov.run(), name="governance"))
+
+    if cfg.update_check_interval:
+        update_watch = UpdateWatcher(notify=send_text, interval=cfg.update_check_interval)
+        tasks.append(asyncio.create_task(update_watch.run(), name="update-watch"))
 
     stop = asyncio.Event()
 

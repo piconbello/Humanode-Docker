@@ -1,12 +1,10 @@
 services:
   humanode:
-    build: .
     image: ghcr.io/piconbello/humanode-docker:${HMND_IMAGE_TAG:-latest}
     container_name: humanode-validator
-    restart: unless-stopped
+    restart: always
     env_file: .env
     volumes:
       - ./data:/data
     ports:
       - "30333:30333/tcp"
-    stop_grace_period: 35s

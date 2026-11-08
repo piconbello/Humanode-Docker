@@ -2,7 +2,7 @@ name: upstream-release-watch
 
 on:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -48,3 +48,49 @@ jobs:
             - New:      `${{ steps.detect.outputs.upstream_tag }}`
 
             Release: https://github.com/humanode-network/distribution/releases/tag/${{ steps.detect.outputs.upstream_tag }}
+
+  peer:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Compare pinned peer with mainnet manifest
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh .github/scripts/detect-peer.sh
+
+      - name: Open or update PR
+        id: pr
+        if: steps.detect.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: "chore(peer): ${{ steps.detect.outputs.tag }} (${{ steps.detect.outputs.short }})"
+          title: "chore(peer): ${{ steps.detect.outputs.tag }} (${{ steps.detect.outputs.short }}) [automated]"
+          branch: chore/peer-${{ steps.detect.outputs.short }}
+          add-paths: |
+            artifacts/humanode-peer.env
+            artifacts/chainspec.json
+          delete-branch: true
+          body: |
+            Mainnet manifest now ships a different humanode-peer / chainspec. Merges automatically once CI is green.
+
+            | | Tag | Commit |
+            |---|---|---|
+            | Previous | `${{ steps.detect.outputs.old_tag }}` | `${{ steps.detect.outputs.old_commit }}` |
+            | New | `${{ steps.detect.outputs.tag }}` | `${{ steps.detect.outputs.commit }}` |
+
+            - peer sha256: `${{ steps.detect.outputs.peer_sha }}`
+            - chainspec sha256: `${{ steps.detect.outputs.chainspec_sha }}`
+
+            Release: https://github.com/humanode-network/humanode/releases/tag/${{ steps.detect.outputs.tag }}
+
+      - name: Run CI on the bump branch
+        if: steps.pr.outputs.pull-request-operation == 'created' || steps.pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run test-and-publish.yml --repo "${{ github.repository }}" --ref "chore/peer-${{ steps.detect.outputs.short }}"

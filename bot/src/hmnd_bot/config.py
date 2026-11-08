@@ -71,6 +71,7 @@ class Config:
     gov_milestones: bool
     gov_poll_interval: timedelta
     gov_api_base: str
+    update_check_interval: timedelta | None
     rpc_url: str = "ws://127.0.0.1:9944"
 
 
@@ -95,6 +96,7 @@ _DEFAULTS: dict[str, str] = {
     "TUNNEL_RESTART_BACKOFF": "30s,1m,5m,15m,30m",
     "GOV_POLL_INTERVAL": "15m",
     "GOV_API_BASE": "https://vortex-simulator.humanode.io",
+    "UPDATE_CHECK_INTERVAL": "6h",
 }
 
 _MIN_CATCHUP_BLOCK_AGE = timedelta(seconds=6)
@@ -184,4 +186,5 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         gov_milestones=_bool_flag(e, "GOV_MILESTONES"),
         gov_poll_interval=parse_duration(_optional(e, "GOV_POLL_INTERVAL")),
         gov_api_base=_optional(e, "GOV_API_BASE"),
+        update_check_interval=_optional_duration(e, "UPDATE_CHECK_INTERVAL"),
     )
