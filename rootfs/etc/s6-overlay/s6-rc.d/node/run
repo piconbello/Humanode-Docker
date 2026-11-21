@@ -22,7 +22,7 @@ fi
 if [ "$VALIDATOR" = "true" ]; then
     case " ${NODE_EXTRA_ARGS:-} " in
         *--rpc-external*|*--unsafe-rpc-external*|*--rpc-methods*)
-            echo "node: WARNING: NODE_EXTRA_ARGS changes RPC exposure; bioauth enroll/authenticate are refused in safe mode. Use RPC_PROXY instead." ;;
+            echo "node: WARNING: NODE_EXTRA_ARGS changes node RPC exposure: safe mode breaks bioauth, unsafe mode exposes key methods. Use RPC_PROXY instead." ;;
     esac
 fi
 

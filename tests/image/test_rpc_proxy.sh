@@ -63,6 +63,16 @@ docker exec "$C2" sh -c 'ps -o user=,args= -C python3' | grep 'rpc_proxy' | grep
 
 URL="http://127.0.0.1:$HOST_PORT"
 
+echo "check: every allowlisted method exists on this humanode-peer"
+docker exec -i "$C2" python3 - <<'EOF' || fail "allowlist names a method the node does not serve"
+import json, urllib.request
+from hmnd_bot.rpc_proxy import ALLOWED
+req = urllib.request.Request("http://127.0.0.1:9944", data=b'{"jsonrpc":"2.0","id":1,"method":"rpc_methods","params":[]}',
+                             headers={"Content-Type": "application/json"})
+missing = ALLOWED - set(json.load(urllib.request.urlopen(req))["result"]["methods"])
+assert not missing, sorted(missing)
+EOF
+
 echo "check: allowed methods work through the published port"
 rpc "$URL" "$(req eth_chainId)" | grep -q '"result":"0x' || fail "eth_chainId not served"
 rpc "$URL" "$(req system_health)" | grep -q '"result":{' || fail "system_health not served"

@@ -5,44 +5,8 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
+from hmnd_bot import rpc_proxy
 from hmnd_bot.rpc_proxy import ALLOWED, build_app, check
-
-NODE_METHODS = set("""
-account_nextIndex authorExt_getValidatorPublicKey authorExt_setKeys author_hasKey author_hasSessionKeys
-author_insertKey author_pendingExtrinsics author_removeExtrinsic author_rotateKeys author_submitAndWatchExtrinsic
-author_submitExtrinsic author_unwatchExtrinsic babe_epochAuthorship bioauth_authenticate bioauth_authenticateStepV1
-bioauth_authenticateV2 bioauth_enroll bioauth_enrollStepV1 bioauth_enrollV2 bioauth_getFacetecDeviceSdkParams
-bioauth_getFacetecDeviceSdkParamsV2 bioauth_getFacetecSessionToken bioauth_status chainHead_unstable_body
-chainHead_unstable_call chainHead_unstable_follow chainHead_unstable_genesisHash chainHead_unstable_header
-chainHead_unstable_stopBody chainHead_unstable_stopCall chainHead_unstable_stopStorage chainHead_unstable_storage
-chainHead_unstable_unfollow chainHead_unstable_unpin chainSpec_unstable_chainName chainSpec_unstable_genesisHash
-chainSpec_unstable_properties chain_getBlock chain_getBlockHash chain_getFinalisedHead chain_getFinalizedHead
-chain_getHead chain_getHeader chain_getRuntimeVersion chain_subscribeAllHeads chain_subscribeFinalisedHeads
-chain_subscribeFinalizedHeads chain_subscribeNewHead chain_subscribeNewHeads chain_subscribeRuntimeVersion
-chain_unsubscribeAllHeads chain_unsubscribeFinalisedHeads chain_unsubscribeFinalizedHeads chain_unsubscribeNewHead
-chain_unsubscribeNewHeads chain_unsubscribeRuntimeVersion childstate_getKeys childstate_getKeysPaged
-childstate_getKeysPagedAt childstate_getStorage childstate_getStorageEntries childstate_getStorageHash
-childstate_getStorageSize eth_accounts eth_blockNumber eth_call eth_chainId eth_coinbase eth_estimateGas
-eth_feeHistory eth_gasPrice eth_getBalance eth_getBlockByHash eth_getBlockByNumber eth_getBlockTransactionCountByHash
-eth_getBlockTransactionCountByNumber eth_getCode eth_getFilterChanges eth_getFilterLogs eth_getLogs eth_getStorageAt
-eth_getTransactionByBlockHashAndIndex eth_getTransactionByBlockNumberAndIndex eth_getTransactionByHash
-eth_getTransactionCount eth_getTransactionReceipt eth_getUncleByBlockHashAndIndex eth_getUncleByBlockNumberAndIndex
-eth_getUncleCountByBlockHash eth_getUncleCountByBlockNumber eth_getWork eth_hashrate eth_maxPriorityFeePerGas
-eth_mining eth_newBlockFilter eth_newFilter eth_newPendingTransactionFilter eth_protocolVersion eth_sendRawTransaction
-eth_sendTransaction eth_submitHashrate eth_submitWork eth_subscribe eth_syncing eth_uninstallFilter eth_unsubscribe
-grandpa_proveFinality grandpa_roundState grandpa_subscribeJustifications grandpa_unsubscribeJustifications
-net_listening net_peerCount net_version offchain_localStorageGet offchain_localStorageSet payment_queryFeeDetails
-payment_queryInfo state_call state_callAt state_getChildReadProof state_getKeys state_getKeysPaged
-state_getKeysPagedAt state_getMetadata state_getPairs state_getReadProof state_getRuntimeVersion state_getStorage
-state_getStorageAt state_getStorageHash state_getStorageHashAt state_getStorageSize state_getStorageSizeAt
-state_queryStorage state_queryStorageAt state_subscribeRuntimeVersion state_subscribeStorage state_traceBlock
-state_unsubscribeRuntimeVersion state_unsubscribeStorage subscribe_newHead system_accountNextIndex
-system_addLogFilter system_addReservedPeer system_chain system_chainType system_dryRun system_dryRunAt system_health
-system_localListenAddresses system_localPeerId system_name system_nodeRoles system_peers system_properties
-system_removeReservedPeer system_reservedPeers system_resetLogFilter system_syncState system_unstable_networkState
-system_version transaction_unstable_submitAndWatch transaction_unstable_unwatch txpool_content txpool_inspect
-txpool_status unsubscribe_newHead web3_clientVersion web3_sha3
-""".split())
 
 NODE_UNSAFE = {
     "author_insertKey", "author_rotateKeys", "author_hasKey", "author_hasSessionKeys", "authorExt_setKeys",
@@ -59,9 +23,7 @@ def call(method, req_id=1):
     return {"jsonrpc": "2.0", "id": req_id, "method": method, "params": []}
 
 
-def test_allowlist_is_known_and_excludes_unsafe_and_validator_methods():
-    assert len(NODE_METHODS) == 169
-    assert ALLOWED <= NODE_METHODS
+def test_allowlist_excludes_unsafe_and_validator_methods():
     assert not ALLOWED & NODE_UNSAFE
     assert not {m for m in ALLOWED if m.startswith(("bioauth_", "author", "offchain_", "babe_", "grandpa_", "txpool_"))}
     assert "eth_sendTransaction" not in ALLOWED
@@ -151,3 +113,17 @@ async def test_ws_forwards_allowed_and_blocks_unsafe(stack):
         await ws.send_bytes(b"\x00")
         assert (await ws.receive()).type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.CLOSING)
     assert [b["method"] for b in seen] == ["eth_blockNumber"]
+
+
+async def test_ws_connections_are_capped(stack):
+    session, proxy, _ = stack
+    slots = proxy.app[rpc_proxy.WS_SLOTS]
+    for _ in range(rpc_proxy.MAX_WS):
+        await slots.acquire()
+    with pytest.raises(aiohttp.WSServerHandshakeError) as e:
+        await session.ws_connect(proxy.make_url("/"))
+    assert e.value.status == 503
+    slots.release()
+    async with session.ws_connect(proxy.make_url("/")) as ws:
+        await ws.send_str(json.dumps(call("eth_chainId")))
+        assert json.loads((await ws.receive()).data)["result"] == "ok"

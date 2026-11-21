@@ -14,8 +14,11 @@ logger = logging.getLogger("hmnd_bot.rpc_proxy")
 UPSTREAM_HTTP = "http://127.0.0.1:9944"
 UPSTREAM_WS = "ws://127.0.0.1:9944"
 MAX_SIZE = 15 * 1024 * 1024
+MAX_UPSTREAM = 20
+MAX_WS = 10
 
 SESSION = web.AppKey("session", aiohttp.ClientSession)
+WS_SLOTS = web.AppKey("ws_slots", asyncio.Semaphore)
 UPSTREAM_HTTP_KEY = web.AppKey("upstream_http", str)
 UPSTREAM_WS_KEY = web.AppKey("upstream_ws", str)
 
@@ -63,11 +66,11 @@ def check(payload: Any) -> dict | list | None:
             return None
         for c in payload:
             if not _allowed(c):
-                logger.info("rpc-proxy: blocked %r", c.get("method") if isinstance(c, dict) else "<invalid>")
+                logger.debug("rpc-proxy: blocked %r", c.get("method") if isinstance(c, dict) else "<invalid>")
         return [_error(_id(c), -32601, "Method not allowed") for c in payload]
     if _allowed(payload):
         return None
-    logger.info("rpc-proxy: blocked %r", payload.get("method") if isinstance(payload, dict) else "<invalid>")
+    logger.debug("rpc-proxy: blocked %r", payload.get("method") if isinstance(payload, dict) else "<invalid>")
     return _error(_id(payload), -32601, "Method not allowed")
 
 
@@ -94,6 +97,14 @@ async def _http(request: web.Request) -> web.Response:
 
 
 async def _ws(request: web.Request) -> web.WebSocketResponse:
+    slots = request.app[WS_SLOTS]
+    if slots.locked():
+        raise web.HTTPServiceUnavailable()
+    async with slots:
+        return await _ws_session(request)
+
+
+async def _ws_session(request: web.Request) -> web.WebSocketResponse:
     client = web.WebSocketResponse(max_msg_size=MAX_SIZE)
     await client.prepare(request)
     session: aiohttp.ClientSession = request.app[SESSION]
@@ -135,7 +146,9 @@ async def _get(request: web.Request) -> web.StreamResponse:
 
 
 async def _session_ctx(app: web.Application):
-    app[SESSION] = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60))
+    app[WS_SLOTS] = asyncio.Semaphore(MAX_WS)
+    app[SESSION] = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60),
+                                         connector=aiohttp.TCPConnector(limit=MAX_UPSTREAM))
     yield
     await app[SESSION].close()
 
