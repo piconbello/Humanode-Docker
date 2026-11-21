@@ -67,6 +67,8 @@ jobs:
         run: IMAGE=hmnd-validator:test sh tests/image/test_insert_key.sh
       - name: test_seed_not_logged
         run: IMAGE=hmnd-validator:test sh tests/image/test_seed_not_logged.sh
+      - name: test_rpc_proxy
+        run: IMAGE=hmnd-validator:test sh tests/image/test_rpc_proxy.sh
 
   sync-test:
     name: Sync + RPC contract test
