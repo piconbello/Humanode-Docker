@@ -150,12 +150,14 @@ class GovernanceWatcher:
 
         for item in reversed(new_items):
             item_id = item.get("id", "")
-            msg = self._match_and_format(item_id, item)
+            try:
+                msg = self._match_and_format(item_id, item)
+            except (KeyError, TypeError, AttributeError):
+                logger.exception("governance: skipping malformed item %s", item_id)
+                msg = None
             if msg:
                 await self._safe_notify(msg)
-
-        if new_items:
-            self._watermark = items[0]["id"]
+            self._watermark = item["id"]
             write_flag(self._watermark_path, self._watermark)
 
         await self._on_success()

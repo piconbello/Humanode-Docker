@@ -107,8 +107,17 @@ _VALID_SYNC_MODES = {"warp", "full", "fast", "fast-unsafe"}
 _DISABLED = {"off", "none"}
 
 
+_TRUE = {"true", "on", "yes", "1"}
+_FALSE = {"false", "off", "no", "0", ""}
+
+
 def _bool_flag(env: dict[str, str], key: str) -> bool:
-    return bool(env.get(key, "").strip())
+    v = env.get(key, "").strip().lower()
+    if v in _TRUE:
+        return True
+    if v in _FALSE:
+        return False
+    raise ConfigError(f"{key} must be one of true/false/on/off/yes/no/1/0, got {v!r}")
 
 
 def _require(env: dict[str, str], key: str) -> str:

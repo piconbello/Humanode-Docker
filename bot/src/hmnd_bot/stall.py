@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
+from .catchup import cumulative_offsets, format_duration
 from .first_sync import FirstSyncWatcher
 from .node import BlockInfo, Health, NodeClient, NodeUnavailable
 
@@ -17,15 +18,6 @@ class _StalledState:
     since: datetime
     stopped_at: int
     reminders_fired: int
-
-
-def cumulative_offsets(cadence: list[timedelta]) -> list[timedelta]:
-    total = timedelta()
-    out: list[timedelta] = []
-    for d in cadence:
-        total += d
-        out.append(total)
-    return out
 
 
 def reminder_due(elapsed: timedelta, offsets: list[timedelta], cadence: list[timedelta]) -> int:
@@ -93,7 +85,7 @@ class StallDetector:
         if self._last_seen_number is None or block.number > self._last_seen_number:
             if self._stalled is not None:
                 recovered_msg = (f"✅ {self._name} recovered. Now at #{block.number} "
-                                 f"(stalled for {_human(now - self._stalled.since)}).")
+                                 f"(stalled for {format_duration(now - self._stalled.since)}).")
                 await self._safe_notify(recovered_msg)
                 self._stalled = None
             self._last_seen_number = block.number
@@ -137,16 +129,7 @@ class StallDetector:
 
     def _format_stall_msg(self, block: BlockInfo, health: Health, elapsed: timedelta) -> str:
         return (f"⚠️ {self._name} stalled at #{block.number}. "
-                f"No advance for {_human(elapsed)}, peers {health.peers}.")
-
-
-def _human(delta: timedelta) -> str:
-    total = int(delta.total_seconds())
-    if total < 60:
-        return f"{total}s"
-    if total < 3600:
-        return f"{total // 60}m {total % 60}s"
-    return f"{total // 3600}h {(total % 3600) // 60}m"
+                f"No advance for {format_duration(elapsed)}, peers {health.peers}.")
 
 
 @dataclass
@@ -180,6 +163,7 @@ class FinalityLagDetector:
         self._notify = notify
         self._poll_interval = poll_interval
         self._lagging: _LaggingState | None = None
+        self._over_since: datetime | None = None
 
     async def run(self) -> None:
         await self._first_sync.wait_complete()
@@ -204,17 +188,21 @@ class FinalityLagDetector:
             return
 
         if lag <= self._max_lag:
+            self._over_since = None
             if self._lagging is not None:
                 await self._safe_notify(
                     f"✅ finality recovered. best #{best.number}, "
                     f"finalized #{finalized.number} ({lag} behind, "
-                    f"lagging for {_human(now - self._lagging.since)})."
+                    f"lagging for {format_duration(now - self._lagging.since)})."
                 )
                 self._lagging = None
             return
 
         if self._lagging is None:
-            self._lagging = _LaggingState(since=now, reminders_fired=1)
+            if self._over_since is None:
+                self._over_since = now
+                return
+            self._lagging = _LaggingState(since=self._over_since, reminders_fired=1)
             await self._safe_notify(self._format_msg(best, finalized, lag, health))
             return
 

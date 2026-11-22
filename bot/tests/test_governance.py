@@ -409,3 +409,22 @@ def test_format_milestone_includes_milestone_and_budget():
     assert "Builder" in msg
     assert "Milestone: M3" in msg
     assert "Budget: 100 HMND" in msg
+
+
+async def test_malformed_item_is_skipped_and_not_resent(tmp_path):
+    bad = {"id": "proposal-submitted:bad", "stats": []}
+    feed = _feed([_item("proposal-submitted:b", title="B"), bad, _item("proposal-submitted:a", title="A"), _item("old:1")])
+    sess = FakeSession([
+        FakeResponse(_feed([_item("old:1")])),
+        FakeResponse(feed),
+        FakeResponse(feed),
+    ])
+    w, sent = _watcher(tmp_path, sess)
+
+    await w._tick()
+    await w._tick()
+    assert [m.splitlines()[0][-1] for m in sent] == ["A", "B"]
+    assert (tmp_path / "watermark").read_text() == "proposal-submitted:b"
+
+    await w._tick()
+    assert len(sent) == 2

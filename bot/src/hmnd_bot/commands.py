@@ -8,7 +8,7 @@ from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, Message
 
 from .bioauth_url import compose_bioauth_url, qr_png_bytes
-from .catchup import CatchupView
+from .catchup import CatchupView, format_blocks, format_duration
 from .node import ChainStatusNode, NodeUnavailable
 from .tunnel import Tunnel, TunnelAuthFailure, TunnelQuotaExceeded, TunnelError, TunnelState
 
@@ -103,26 +103,7 @@ def build_router(
 
 
 def _syncing_reply(gap: int | None, best_block: int, peers: int, eta: timedelta | None = None) -> str:
-    behind = _blocks(gap)
-    eta_part = f", ETA ~{_human(eta)}" if eta is not None else ""
+    behind = format_blocks(gap)
+    eta_part = f", ETA ~{format_duration(eta)}" if eta is not None else ""
     return (f"⏳ Node is still syncing ({behind} behind, best block #{best_block}, peers {peers}{eta_part}). "
             f"Wait for sync to complete before attempting a facescan.")
-
-def _blocks(gap: int | None) -> str:
-    if gap is None:
-        return "unknown"
-    if gap >= 1_000_000:
-        return f"{gap / 1_000_000:.1f}M blocks"
-    if gap >= 1_000:
-        return f"{gap / 1_000:.1f}K blocks"
-    return f"{gap} blocks"
-
-def _human(d: timedelta) -> str:
-    total = int(d.total_seconds())
-    if total < 60:
-        return f"{total}s"
-    if total < 3600:
-        return f"{total // 60}m"
-    if total < 86400:
-        return f"{total // 3600}h {(total % 3600) // 60}m"
-    return f"{total // 86400}d {(total % 86400) // 3600}h"

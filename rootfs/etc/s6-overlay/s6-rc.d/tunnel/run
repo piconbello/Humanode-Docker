@@ -1,6 +1,8 @@
 #!/command/with-contenv sh
 set -eu
 
+s6-svperms -G botuser /run/service/tunnel
+
 if [ "${VALIDATOR:-false}" != "true" ]; then
     echo "tunnel: disabled (VALIDATOR is not true)"
     exec sleep infinity

@@ -293,3 +293,20 @@ def test_governance_poll_interval_override():
 def test_governance_api_base_override():
     cfg = load_config(BASE_ENV | {"GOV_API_BASE": "https://vortex.humanode.io"})
     assert cfg.gov_api_base == "https://vortex.humanode.io"
+
+
+@pytest.mark.parametrize("value", ["off", "false", "no", "0", "OFF", "False"])
+def test_gov_flags_disabled_values(value):
+    cfg = load_config(BASE_ENV | {"GOV_NEW_PROPOSALS": value})
+    assert cfg.gov_new_proposals is False
+
+
+@pytest.mark.parametrize("value", ["true", "TRUE", "On"])
+def test_gov_flags_enabled_values(value):
+    cfg = load_config(BASE_ENV | {"GOV_MILESTONES": value})
+    assert cfg.gov_milestones is True
+
+
+def test_gov_flag_rejects_unknown_value():
+    with pytest.raises(ConfigError, match="GOV_STAGE_CHANGES"):
+        load_config(BASE_ENV | {"GOV_STAGE_CHANGES": "maybe"})

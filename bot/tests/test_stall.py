@@ -60,9 +60,12 @@ async def test_normal_lag_is_silent(lag):
     assert sent == []
 
 
-async def test_one_block_past_the_norm_alerts():
+async def test_one_block_past_the_norm_alerts_on_the_second_poll():
     node, sent = FakeNode(best=1000, lag=4), []
-    await _det(node, sent)._tick()
+    det = _det(node, sent)
+    await det._tick()
+    assert sent == []
+    await det._tick()
     assert len(sent) == 1
     assert "finality lagging" in sent[0]
     assert "best #1000" in sent[0] and "finalized #996" in sent[0]
@@ -80,6 +83,7 @@ async def test_alert_is_not_repeated_before_the_cadence():
 async def test_recovery_is_reported_once_lag_returns_to_normal():
     node, sent = FakeNode(lag=9), []
     det = _det(node, sent)
+    await det._tick()
     await det._tick()
     node.lag = 2
     await det._tick()
@@ -200,7 +204,9 @@ async def test_finality_lag_alerts_instantly_then_hourly_until_resolved(monkeypa
     )
 
     await det._tick()
-    assert len(sent) == 1, "must alert on the first poll past the lag limit"
+    assert sent == []
+    await det._tick()
+    assert len(sent) == 1, "must alert on the second poll past the lag limit"
 
     fired_at = []
     for _ in range(3 * 60):
@@ -217,3 +223,12 @@ async def test_finality_lag_alerts_instantly_then_hourly_until_resolved(monkeypa
     node.lag = 2
     await det._tick()
     assert "finality recovered" in sent[-1]
+
+
+async def test_single_poll_blip_sends_nothing():
+    node, sent = FakeNode(lag=5), []
+    det = _det(node, sent)
+    await det._tick()
+    node.lag = 2
+    await det._tick()
+    assert sent == []
