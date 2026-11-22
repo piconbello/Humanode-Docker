@@ -45,6 +45,8 @@ class BioauthScheduler:
         self._webapp_base = webapp_base
         self._slot_state_path = slot_state_path
         self._tick = tick
+        self._next_due: datetime | None = None
+        self._skip_warned: str | None = None
 
     async def run(self) -> None:
         while True:
@@ -54,7 +56,13 @@ class BioauthScheduler:
                 logger.debug("bioauth: node unavailable; skipping tick")
             except Exception:
                 logger.exception("bioauth tick error")
-            await asyncio.sleep(self._tick.total_seconds())
+            await asyncio.sleep(self._delay(datetime.now(timezone.utc)))
+
+    def _delay(self, now: datetime) -> float:
+        delay = self._tick.total_seconds()
+        if self._next_due is not None and self._next_due > now:
+            delay = min(delay, (self._next_due - now).total_seconds())
+        return delay
 
     async def _step(self, now: datetime) -> None:
         await self._flush_notices()
@@ -97,7 +105,7 @@ class BioauthScheduler:
         if not self._facescan_due(status, now):
             return
         slot_id = self._current_slot_id(status, now)
-        if await self._deliver(status, now) and slot_id is not None:
+        if await self._deliver(status, now, slot_id) and slot_id is not None:
             state.write_flag(self._slot_state_path, slot_id)
 
     def _syncing_text(self) -> str:
@@ -121,14 +129,22 @@ class BioauthScheduler:
         status: BioauthStatus = await self._node.bioauth_status()
         if status.is_active:
             state.clear_flag(self._anchor_path)
+        self._next_due = self._next_boundary(status, now)
         slot_id = self._current_slot_id(status, now)
         if slot_id is None:
             return
         last = state.read_flag(self._slot_state_path)
         if last == slot_id:
             return
-        if await self._deliver(status, now):
+        if await self._deliver(status, now, slot_id):
             state.write_flag(self._slot_state_path, slot_id)
+
+    def _next_boundary(self, status: BioauthStatus, now: datetime) -> datetime | None:
+        if not status.is_active or status.expires_at_ms is None:
+            return None
+        expires = datetime.fromtimestamp(status.expires_at_ms / 1000, tz=timezone.utc)
+        upcoming = [expires - d for d in self._remind_before if expires - d > now]
+        return min(upcoming, default=None)
 
     def _current_slot_id(self, status: BioauthStatus, now: datetime) -> str | None:
         if status.is_active and status.expires_at_ms is not None:
@@ -181,19 +197,19 @@ class BioauthScheduler:
         self._write_anchor(now)
         return now
 
-    async def _deliver(self, status: BioauthStatus, now: datetime) -> bool:
+    async def _deliver(self, status: BioauthStatus, now: datetime, slot_id: str | None = None) -> bool:
         if self._catchup.is_behind:
             return False
         try:
             wss_url = await self._tunnel.start()
         except TunnelAuthFailure:
-            await self._safe_text("⚠️ Bioauth reminder skipped: NGROK_AUTHTOKEN rejected.")
+            await self._warn_skip(slot_id, "⚠️ Bioauth reminder skipped: NGROK_AUTHTOKEN rejected.")
             return False
         except TunnelQuotaExceeded:
-            await self._safe_text("⚠️ Bioauth reminder skipped: ngrok quota exceeded.")
+            await self._warn_skip(slot_id, "⚠️ Bioauth reminder skipped: ngrok quota exceeded.")
             return False
         except TunnelError as e:
-            await self._safe_text(f"⚠️ Bioauth reminder skipped: tunnel error ({e}).")
+            await self._warn_skip(slot_id, f"⚠️ Bioauth reminder skipped: tunnel error ({e}).")
             return False
 
         if self._catchup.is_behind:
@@ -209,6 +225,12 @@ class BioauthScheduler:
         except Exception:
             logger.exception("bioauth send_photo failed")
             return False
+
+    async def _warn_skip(self, slot_id: str | None, text: str) -> None:
+        if slot_id is not None and slot_id == self._skip_warned:
+            return
+        if await self._safe_text(text):
+            self._skip_warned = slot_id
 
     async def _safe_text(self, text: str) -> bool:
         try:

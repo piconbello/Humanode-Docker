@@ -67,11 +67,9 @@ in a single prompt:
 5. `deploy.sh telegram <token> <userid>` — live-verified before writing
 6. `deploy.sh pull` — `docker-compose.yml` runs the published image
    `ghcr.io/piconbello/humanode-docker:latest`; set `HMND_IMAGE_TAG` in `.env` to pin a
-   release instead. On a clean `main` checkout this pulls that image. On any other branch,
-   with uncommitted changes, or if the pull fails, it builds locally and tags the build with
-   the same ref, so compose runs the right thing either way. `deploy.sh build` always builds
-   locally. Never pull the published image while working on a branch — you would be running
-   main's code and debugging changes that are not in the container.
+   release instead. This always runs a published image, never your checkout: to test a
+   branch, publish a preview (`gh workflow run test-and-publish.yml --ref <branch> -f
+   preview=true`) and set `HMND_IMAGE_TAG=preview-<sha>`.
 7. `deploy.sh up` — validates config, then starts the container
 8. `deploy.sh status` — confirm node, tunnel, and bot are healthy
 9. Tell the user to run `seed.sh` to insert their mnemonic — `! bash
@@ -86,7 +84,7 @@ in a single prompt:
 .claude/skills/run-humanode/deploy.sh init                         # .env + ./data, then validate
 .claude/skills/run-humanode/deploy.sh validator                    # VALIDATOR=true (tunnel + bioauth)
 .claude/skills/run-humanode/deploy.sh telegram <token> <userid>    # live-verified before writing
-.claude/skills/run-humanode/deploy.sh pull                         # ghcr on clean main, else local build
+.claude/skills/run-humanode/deploy.sh pull                         # the published image compose names
 .claude/skills/run-humanode/deploy.sh up                           # validates, then starts
 bash .claude/skills/run-humanode/seed.sh                           # interactive; hidden input
 .claude/skills/run-humanode/deploy.sh link
@@ -303,9 +301,8 @@ Other commands: `logs [n]` (ANSI stripped), `down` (keep `./data`), `destroy` (w
   `off` (or `none`). Deleting the line entirely also leaves reminders on.
 - **Stall alerts need both halves.** A threshold without its `_REMIND_AFTER` list, or vice
   versa, is silently inert.
-- **`ENABLE_BOT` gates the whole bot** and `bot/run` only checks that it is *non-empty* — any
-  value works, despite the message saying `true`. It and the two Telegram settings are absent
-  from `README.md`.
+- **`ENABLE_BOT` gates the whole bot**: `true`, `on`, `yes` or `1` starts it, anything else
+  leaves it off. It and the two Telegram settings are absent from `README.md`.
 - **A bad bot token restart-loops forever**, about every 4 seconds, logging
   `TELEGRAM_BOT_TOKEN looks like a placeholder; refusing to start`. The node and tunnel are
   unaffected — only the logs suffer. `validate` catches this before you ever start.
@@ -355,6 +352,5 @@ local Pillow, not a code failure. Run the other files individually to confirm.
 | tunnel shows `412` | it retries; `deploy.sh up` forces a restart |
 | `manifest unknown` on pull | `HMND_IMAGE_TAG` names a tag that was never published; check the repo's releases |
 | running an older image than expected | `latest` is only republished on pushes to `main`; `deploy.sh pull` then `up` |
-| container is running code you just changed | `up` reuses the existing image; `deploy.sh build` first |
-| pulled image looks like your local edits | a local build carries the same pinned ref; `docker image rm <ref>`, then `deploy.sh pull` on clean `main` |
+| container is running code you just changed | images are only built by CI; publish a preview and set `HMND_IMAGE_TAG` |
 | Disk filling up | image ~1.2 GB, a full sync needs far more; `deploy.sh destroy` reclaims `./data` |

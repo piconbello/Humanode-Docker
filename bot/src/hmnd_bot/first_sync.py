@@ -4,7 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from .node import NodeClient, NodeUnavailable
+from .node import NodeClient, NodeRpcError, NodeUnavailable
 from . import state
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class FirstSyncWatcher:
             try:
                 health = await self._node.system_health()
                 best = await self._node.best_block()
-            except NodeUnavailable:
+            except (NodeUnavailable, NodeRpcError):
                 await asyncio.sleep(_POLL_INTERVAL_S)
                 continue
 
