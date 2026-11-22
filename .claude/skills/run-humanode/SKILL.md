@@ -24,7 +24,7 @@ mainnet sync needs far more than the ~1.2 GB image; budget tens of GB for `./dat
 
 ## Deployment flow
 
-When deploying, follow this order. Before running `up`, ask the user **all three** of these
+When deploying, follow this order. Before running `up`, ask the user **all four** of these
 in a single prompt:
 
 1. **Tunnel backend** — Native Humanode tunnel (default, no account needed) or ngrok?
@@ -35,7 +35,15 @@ in a single prompt:
    and username ending in `bot`, copy the token) and their numeric Telegram user ID
    (from @userinfobot: send `/start`, copy the number). Both are required.
 
-3. **Seed mnemonic** — After the node is healthy, tell the user to run `seed.sh`.
+3. **Governance alerts** — Do they want governance proposal notifications? If yes,
+   which tiers? The three options are independent (multi-select):
+   - **New proposals** (`GOV_NEW_PROPOSALS`) — notified when a proposal is submitted
+   - **Stage changes** (`GOV_STAGE_CHANGES`) — notified on pool advances, failures, window closures
+   - **Milestones** (`GOV_MILESTONES`) — notified on formation milestone submissions
+
+   Set each chosen tier to `on` in `.env`. Leave unset or empty to disable. Off by default.
+
+4. **Seed mnemonic** — After the node is healthy, tell the user to run `seed.sh`.
    It needs a real interactive terminal for the hidden prompt, so **where** they
    run it matters:
    - **Desktop (terminal app open):** `! bash .claude/skills/run-humanode/seed.sh`

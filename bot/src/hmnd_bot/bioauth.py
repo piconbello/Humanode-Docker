@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
 from .bioauth_url import compose_bioauth_url
-from .catchup import CatchupControl
+from .catchup import CatchupControl, format_blocks, format_duration
 from .node import BioauthNode, BioauthStatus, NodeUnavailable
 from .tunnel import Tunnel, TunnelAuthFailure, TunnelError, TunnelQuotaExceeded
 from . import state
@@ -105,8 +105,8 @@ class BioauthScheduler:
         eta = self._catchup.eta
         if gap is None:
             return SYNCING_MESSAGE
-        eta_part = f" ETA ~{_human(eta)}." if eta is not None else ""
-        return f"{SYNCING_MESSAGE} Currently {_blocks(gap)} behind.{eta_part}"
+        eta_part = f" ETA ~{format_duration(eta)}." if eta is not None else ""
+        return f"{SYNCING_MESSAGE} Currently {format_blocks(gap)} behind.{eta_part}"
 
     def _facescan_due(self, status: BioauthStatus, now: datetime) -> bool:
         if not status.is_active or status.expires_at_ms is None:
@@ -119,6 +119,8 @@ class BioauthScheduler:
 
     async def _evaluate(self, now: datetime) -> None:
         status: BioauthStatus = await self._node.bioauth_status()
+        if status.is_active:
+            state.clear_flag(self._anchor_path)
         slot_id = self._current_slot_id(status, now)
         if slot_id is None:
             return
@@ -217,7 +219,6 @@ class BioauthScheduler:
         return True
 
 
-
 def _label(d: timedelta) -> str:
     s = int(d.total_seconds())
     if s % 86400 == 0:
@@ -227,22 +228,3 @@ def _label(d: timedelta) -> str:
     if s % 60 == 0:
         return f"{s // 60}m"
     return f"{s}s"
-
-def _blocks(gap: int | None) -> str:
-    if gap is None:
-        return "unknown blocks"
-    if gap >= 1_000_000:
-        return f"{gap / 1_000_000:.1f}M blocks"
-    if gap >= 1_000:
-        return f"{gap / 1_000:.1f}K blocks"
-    return f"{gap} blocks"
-
-def _human(d: timedelta) -> str:
-    total = int(d.total_seconds())
-    if total < 60:
-        return f"{total}s"
-    if total < 3600:
-        return f"{total // 60}m"
-    if total < 86400:
-        return f"{total // 3600}h {(total % 3600) // 60}m"
-    return f"{total // 86400}d {(total % 86400) // 3600}h"

@@ -314,3 +314,24 @@ async def test_failed_notice_is_requeued(tmp_path):
     s = _sched(tmp_path, c, send_text=AsyncMock(side_effect=RuntimeError("down")))
     await s._step(NOW)
     assert c.notices == ["⏳ first", "⏳ second"]
+
+
+async def test_second_expiry_restarts_post_expiry_cadence(tmp_path):
+    c = FakeCatchup()
+    s = _sched(tmp_path, c)
+    await s._evaluate(NOW + timedelta(minutes=5))
+    assert (tmp_path / "slot.anchor").exists()
+
+    later = NOW + timedelta(days=7)
+    s._node.status = _active(later, timedelta(days=7))
+    await s._evaluate(later)
+    assert not (tmp_path / "slot.anchor").exists()
+
+    expiry = later + timedelta(days=7)
+    s._node.status = INACTIVE
+    s._send_photo.reset_mock()
+    await s._evaluate(expiry)
+    await s._evaluate(expiry + timedelta(minutes=5))
+    await s._evaluate(expiry + timedelta(minutes=20))
+    assert s._send_photo.await_count == 2
+    assert s._current_slot_id(INACTIVE, expiry + timedelta(minutes=20)).endswith(":post-1")

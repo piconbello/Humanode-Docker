@@ -43,4 +43,21 @@ docker run --rm --entrypoint /bin/sh -v "$VOL:/data" "$IMAGE" -c \
     'stat -c "%a %U %G" /data/bot-state' | grep -q '^700 botuser botuser' \
     || fail "/data/bot-state perms wrong (expected 0700 botuser:botuser)"
 
+echo "check: botuser can restart the tunnel service but not the node"
+CTR="hmnd-routing-ctr-$$"
+docker run -d --rm --network none --name "$CTR" "$IMAGE" > /dev/null
+for i in $(seq 1 30); do
+    docker exec "$CTR" test -p /run/service/tunnel/supervise/control 2>/dev/null \
+        && docker exec "$CTR" sh -c 'stat -c %G /run/service/tunnel/supervise/control' | grep -q '^botuser$' \
+        && break
+    sleep 1
+done
+docker exec -u botuser "$CTR" /command/s6-svc -r /run/service/tunnel \
+    || { docker rm -f "$CTR" > /dev/null; fail "botuser cannot restart the tunnel service"; }
+if docker exec -u botuser "$CTR" /command/s6-svc -r /run/service/node 2>/dev/null; then
+    docker rm -f "$CTR" > /dev/null
+    fail "botuser can control the node service"
+fi
+docker rm -f "$CTR" > /dev/null
+
 echo "ok: entrypoint routing test passed"

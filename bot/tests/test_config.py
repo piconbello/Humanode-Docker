@@ -54,7 +54,7 @@ def test_load_config_applies_defaults():
         timedelta(hours=3), timedelta(hours=6), timedelta(hours=12),
         timedelta(days=2), timedelta(days=4),
     ]
-    assert cfg.block_stall_threshold is None
+    assert cfg.block_stall_threshold == timedelta(seconds=30)
     assert cfg.rpc_url == "ws://127.0.0.1:9944"
 
 
@@ -228,17 +228,85 @@ def test_before_only_ladder_is_allowed():
     assert cfg.bioauth_remind_after is None
 
 
-def test_stall_alerts_remain_opt_in():
+def test_stall_alerts_are_on_by_default():
     cfg = load_config(BASE_ENV)
-    assert cfg.block_stall_threshold is None
-    assert cfg.finality_stall_threshold is None
+    # 5 blocks at the 6s nominal block time
+    assert cfg.block_stall_threshold == timedelta(seconds=30)
+    # alert on detection, then once an hour until it clears
+    assert cfg.block_stall_remind_after == [timedelta(hours=1)]
+    # finality normally trails the tip by 2-3 blocks; 4+ is a real lag
+    assert cfg.finality_max_lag == 3
+    assert cfg.finality_lag_remind_after == [timedelta(hours=1)]
 
 
 def test_stall_alerts_can_be_disabled_explicitly():
     cfg = load_config(BASE_ENV | {"BLOCK_STALL_THRESHOLD": "off"})
     assert cfg.block_stall_threshold is None
+    cfg = load_config(BASE_ENV | {"FINALITY_MAX_LAG": "none"})
+    assert cfg.finality_max_lag is None
+
+
+def test_finality_max_lag_override_parses():
+    cfg = load_config(BASE_ENV | {"FINALITY_MAX_LAG": "10"})
+    assert cfg.finality_max_lag == 10
 
 
 def test_reminder_override_still_parses():
     cfg = load_config(BASE_ENV | {"BIOAUTH_REMIND_BEFORE": "45m,10m"})
     assert cfg.bioauth_remind_before == [timedelta(minutes=45), timedelta(minutes=10)]
+
+
+def test_governance_defaults_are_disabled():
+    cfg = load_config(BASE_ENV)
+    assert cfg.gov_new_proposals is False
+    assert cfg.gov_stage_changes is False
+    assert cfg.gov_milestones is False
+    assert cfg.gov_poll_interval == timedelta(minutes=15)
+    assert cfg.gov_api_base == "https://vortex-simulator.humanode.io"
+
+
+def test_governance_tiers_enabled_by_any_nonempty_value():
+    cfg = load_config(BASE_ENV | {
+        "GOV_NEW_PROPOSALS": "on",
+        "GOV_STAGE_CHANGES": "yes",
+        "GOV_MILESTONES": "1",
+    })
+    assert cfg.gov_new_proposals is True
+    assert cfg.gov_stage_changes is True
+    assert cfg.gov_milestones is True
+
+
+def test_governance_tiers_disabled_by_empty_or_whitespace():
+    cfg = load_config(BASE_ENV | {
+        "GOV_NEW_PROPOSALS": "",
+        "GOV_STAGE_CHANGES": "   ",
+    })
+    assert cfg.gov_new_proposals is False
+    assert cfg.gov_stage_changes is False
+
+
+def test_governance_poll_interval_override():
+    cfg = load_config(BASE_ENV | {"GOV_POLL_INTERVAL": "5m"})
+    assert cfg.gov_poll_interval == timedelta(minutes=5)
+
+
+def test_governance_api_base_override():
+    cfg = load_config(BASE_ENV | {"GOV_API_BASE": "https://vortex.humanode.io"})
+    assert cfg.gov_api_base == "https://vortex.humanode.io"
+
+
+@pytest.mark.parametrize("value", ["off", "false", "no", "0", "OFF", "False"])
+def test_gov_flags_disabled_values(value):
+    cfg = load_config(BASE_ENV | {"GOV_NEW_PROPOSALS": value})
+    assert cfg.gov_new_proposals is False
+
+
+@pytest.mark.parametrize("value", ["true", "TRUE", "On"])
+def test_gov_flags_enabled_values(value):
+    cfg = load_config(BASE_ENV | {"GOV_MILESTONES": value})
+    assert cfg.gov_milestones is True
+
+
+def test_gov_flag_rejects_unknown_value():
+    with pytest.raises(ConfigError, match="GOV_STAGE_CHANGES"):
+        load_config(BASE_ENV | {"GOV_STAGE_CHANGES": "maybe"})

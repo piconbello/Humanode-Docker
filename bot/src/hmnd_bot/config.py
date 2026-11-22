@@ -57,8 +57,8 @@ class Config:
     bioauth_remind_after: list[timedelta] | None
     block_stall_threshold: timedelta | None
     block_stall_remind_after: list[timedelta] | None
-    finality_stall_threshold: timedelta | None
-    finality_stall_remind_after: list[timedelta] | None
+    finality_max_lag: int | None
+    finality_lag_remind_after: list[timedelta] | None
     catchup_max_block_age: timedelta
     catchup_max_block_gap: int
     catchup_checkpoints: list[timedelta]
@@ -66,6 +66,11 @@ class Config:
     catchup_no_progress_remind_after: list[timedelta]
     tunnel_health_poll: timedelta
     tunnel_restart_backoff: list[timedelta]
+    gov_new_proposals: bool
+    gov_stage_changes: bool
+    gov_milestones: bool
+    gov_poll_interval: timedelta
+    gov_api_base: str
     update_check_interval: timedelta | None
     rpc_url: str = "ws://127.0.0.1:9944"
 
@@ -75,10 +80,13 @@ _DEFAULTS: dict[str, str] = {
     "SYNC_MODE": "full",
     "BIOAUTH_REMIND_BEFORE": "1s",
     "BIOAUTH_REMIND_AFTER": "15m,45m,2h,3h,6h,12h,2d,4d",
-    "BLOCK_STALL_THRESHOLD": "",
-    "BLOCK_STALL_REMIND_AFTER": "",
-    "FINALITY_STALL_THRESHOLD": "",
-    "FINALITY_STALL_REMIND_AFTER": "",
+    # 5 blocks at the 6s nominal block time. Set to "off" to disable.
+    "BLOCK_STALL_THRESHOLD": "30s",
+    # Alert as soon as it is detected, then once an hour until it clears.
+    "BLOCK_STALL_REMIND_AFTER": "1h",
+    # Finality normally trails the best block by 2-3 blocks; 4+ is a real lag.
+    "FINALITY_MAX_LAG": "3",
+    "FINALITY_LAG_REMIND_AFTER": "1h",
     "CATCHUP_MAX_BLOCK_AGE": "2m",
     "CATCHUP_MAX_BLOCK_GAP": "20",
     "CATCHUP_CHECKPOINTS": "1d,6h,1h,15m",
@@ -86,6 +94,8 @@ _DEFAULTS: dict[str, str] = {
     "CATCHUP_NO_PROGRESS_REMIND_AFTER": "30m,1h,2h",
     "TUNNEL_HEALTH_POLL": "30s",
     "TUNNEL_RESTART_BACKOFF": "30s,1m,5m,15m,30m",
+    "GOV_POLL_INTERVAL": "15m",
+    "GOV_API_BASE": "https://vortex-simulator.humanode.io",
     "UPDATE_CHECK_INTERVAL": "6h",
 }
 
@@ -95,6 +105,19 @@ _MAX_CATCHUP_BLOCK_AGE = timedelta(hours=1)
 _VALID_SYNC_MODES = {"warp", "full", "fast", "fast-unsafe"}
 
 _DISABLED = {"off", "none"}
+
+
+_TRUE = {"true", "on", "yes", "1"}
+_FALSE = {"false", "off", "no", "0", ""}
+
+
+def _bool_flag(env: dict[str, str], key: str) -> bool:
+    v = env.get(key, "").strip().lower()
+    if v in _TRUE:
+        return True
+    if v in _FALSE:
+        return False
+    raise ConfigError(f"{key} must be one of true/false/on/off/yes/no/1/0, got {v!r}")
 
 
 def _require(env: dict[str, str], key: str) -> str:
@@ -111,6 +134,11 @@ def _optional(env: dict[str, str], key: str) -> str:
 def _optional_duration_list(env: dict[str, str], key: str) -> list[timedelta] | None:
     v = _optional(env, key)
     return None if not v or v.lower() in _DISABLED else parse_duration_list(v)
+
+
+def _optional_positive_int(env: dict[str, str], key: str) -> int | None:
+    v = _optional(env, key)
+    return None if not v or v.lower() in _DISABLED else parse_positive_int(v)
 
 
 def _optional_duration(env: dict[str, str], key: str) -> timedelta | None:
@@ -151,8 +179,8 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         bioauth_remind_after=_optional_duration_list(e, "BIOAUTH_REMIND_AFTER"),
         block_stall_threshold=_optional_duration(e, "BLOCK_STALL_THRESHOLD"),
         block_stall_remind_after=_optional_duration_list(e, "BLOCK_STALL_REMIND_AFTER"),
-        finality_stall_threshold=_optional_duration(e, "FINALITY_STALL_THRESHOLD"),
-        finality_stall_remind_after=_optional_duration_list(e, "FINALITY_STALL_REMIND_AFTER"),
+        finality_max_lag=_optional_positive_int(e, "FINALITY_MAX_LAG"),
+        finality_lag_remind_after=_optional_duration_list(e, "FINALITY_LAG_REMIND_AFTER"),
         catchup_max_block_age=catchup_max_block_age,
         catchup_max_block_gap=parse_positive_int(_optional(e, "CATCHUP_MAX_BLOCK_GAP")),
         catchup_checkpoints=parse_duration_list(_optional(e, "CATCHUP_CHECKPOINTS")),
@@ -162,5 +190,10 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         ),
         tunnel_health_poll=parse_duration(_optional(e, "TUNNEL_HEALTH_POLL")),
         tunnel_restart_backoff=parse_duration_list(_optional(e, "TUNNEL_RESTART_BACKOFF")),
+        gov_new_proposals=_bool_flag(e, "GOV_NEW_PROPOSALS"),
+        gov_stage_changes=_bool_flag(e, "GOV_STAGE_CHANGES"),
+        gov_milestones=_bool_flag(e, "GOV_MILESTONES"),
+        gov_poll_interval=parse_duration(_optional(e, "GOV_POLL_INTERVAL")),
+        gov_api_base=_optional(e, "GOV_API_BASE"),
         update_check_interval=_optional_duration(e, "UPDATE_CHECK_INTERVAL"),
     )

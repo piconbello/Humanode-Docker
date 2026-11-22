@@ -96,8 +96,6 @@ class NativeTunnel:
                         if body:
                             return TunnelState.CONNECTED, body
                         return TunnelState.CONNECTING, None
-                    if resp.status == 412:
-                        return TunnelState.CONNECTING, None
                     return TunnelState.CONNECTING, None
         except (aiohttp.ClientError, TimeoutError, OSError):
             return TunnelState.DOWN, None
