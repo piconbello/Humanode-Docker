@@ -17,7 +17,10 @@ _FEED_LIMIT = 50
 _DEGRADATION_THRESHOLD = 5
 
 _R1_PREFIXES = ("proposal-submitted:",)
-_R2_PREFIXES = ("pool-advance:", "proposal-failed:", "proposal-window-ended:")
+_R2_PREFIXES = (
+    "pool-advance:", "proposal-failed:", "proposal-window-ended:", "proposal-returned-to-draft:",
+    "vote-passed-veto-window:", "vote-finalized:",
+)
 _R3_PREFIXES = ("formation-milestone-submit:",)
 
 
@@ -157,7 +160,7 @@ class GovernanceWatcher:
                 msg = None
             if msg:
                 await self._safe_notify(msg)
-            self._watermark = item["id"]
+            self._watermark = item.get("id", self._watermark)
             write_flag(self._watermark_path, self._watermark)
 
         await self._on_success()

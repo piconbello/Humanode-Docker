@@ -179,6 +179,34 @@ async def test_proposal_failed_alert(tmp_path):
     assert "Bad Idea" in sent[0]
 
 
+@pytest.mark.parametrize("prefix", ["vote-finalized", "vote-passed-veto-window", "proposal-returned-to-draft"])
+async def test_proposal_outcome_alerts(tmp_path, prefix):
+    sess = FakeSession([
+        FakeResponse(_feed([_item("old:1")])),
+        FakeResponse(_feed([_item(f"{prefix}:x", title="Ember"), _item("old:1")])),
+    ])
+    w, sent = _watcher(tmp_path, sess)
+    await w._tick()
+    await w._tick()
+    assert len(sent) == 1
+    assert "Ember" in sent[0]
+
+
+async def test_item_without_id_does_not_stall_watcher(tmp_path):
+    feed = _feed([_item("proposal-submitted:b", title="B"), {"title": "no id"}, _item("old:1")])
+    sess = FakeSession([
+        FakeResponse(_feed([_item("old:1")])),
+        FakeResponse(feed),
+        FakeResponse(feed),
+    ])
+    w, sent = _watcher(tmp_path, sess)
+    await w._tick()
+    await w._tick()
+    await w._tick()
+    assert len(sent) == 1
+    assert w._watermark == "proposal-submitted:b"
+
+
 async def test_milestone_alert(tmp_path):
     sess = FakeSession([
         FakeResponse(_feed([_item("old:1")])),
