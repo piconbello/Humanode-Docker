@@ -167,7 +167,7 @@ def test_tunnel_policy_allows_webapp_and_blocks_admin():
 @pytest.fixture
 async def tunnel_stack(monkeypatch):
     monkeypatch.delenv("TUNNEL_KEY_SETUP", raising=False)
-    node = {"next_keys": [], "seen": [], "fail": False}
+    node = {"next_keys": [], "seen": [], "fail": False, "syncing": False}
 
     async def http(request):
         body = await request.json()
@@ -175,6 +175,7 @@ async def tunnel_stack(monkeypatch):
         if node["fail"]:
             return web.json_response({"jsonrpc": "2.0", "id": body["id"], "error": {"code": -1, "message": "x"}})
         result = {"authorExt_getValidatorPublicKey": VPK,
+                  "system_health": {"peers": 5, "isSyncing": node["syncing"], "shouldHavePeers": True},
                   "state_getKeysPaged": node["next_keys"]}.get(body["method"], "ok")
         return web.json_response({"jsonrpc": "2.0", "id": body["id"], "result": result})
 
@@ -203,6 +204,14 @@ async def test_tunnel_key_setup_open_until_session_keys_are_set(tunnel_stack):
     assert (await _post(session, proxy, "author_rotateKeys"))["error"]["code"] == -32601
     assert (await _post(session, proxy, "bioauth_authenticateStepV1"))["result"] == "ok"
     monkeypatch.setenv("TUNNEL_KEY_SETUP", "true")
+    assert (await _post(session, proxy, "authorExt_setKeys"))["result"] == "ok"
+
+
+async def test_tunnel_key_setup_closed_while_syncing(tunnel_stack):
+    session, proxy, node, _ = tunnel_stack
+    node["syncing"] = True
+    assert (await _post(session, proxy, "authorExt_setKeys"))["error"]["code"] == -32601
+    node["syncing"] = False
     assert (await _post(session, proxy, "authorExt_setKeys"))["result"] == "ok"
 
 

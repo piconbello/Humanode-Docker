@@ -138,6 +138,45 @@ tun "$(req bioauth_status)" | grep -q '"result"' || fail "bioauth_status blocked
 tun "$(req bioauth_enroll "$LIVENESS")" | grep -q 'validatorKeyNotAvailable' || fail "bioauth_enroll not forwarded on the tunnel"
 docker exec "$C3" curl -sS -m 10 --request-target 'abcd.ws1.htunnel.app' -H 'Content-Type: application/json' \
     -d "$(req system_health)" http://127.0.0.1:9946 | grep -q '"result"' || fail "hostname request target rejected"
+docker exec -i "$C3" python3 - <<'WSEOF' || fail "tunnel websocket path"
+import asyncio, json, aiohttp
+
+def req(i, m, p=None):
+    return json.dumps({"jsonrpc": "2.0", "id": i, "method": m, "params": p or []})
+
+async def main():
+    async with aiohttp.ClientSession() as s:
+        async with s.ws_connect("ws://127.0.0.1:9946", max_msg_size=0) as ws:
+            await ws.send_str(req(1, "author_insertKey"))
+            assert "Method not allowed" in (await ws.receive(timeout=10)).data
+            await ws.send_str(req(2, "bioauth_status"))
+            assert '"result"' in (await ws.receive(timeout=10)).data
+            await ws.send_str(req(3, "chain_subscribeNewHeads"))
+            assert '"result"' in (await ws.receive(timeout=10)).data
+        big = req(4, "state_getStorage", ["0x" + "ab" * (5 * 1024 * 1024 // 2)])
+        replies = []
+        for port in (9946, 9944):
+            async with s.ws_connect(f"ws://127.0.0.1:{port}", max_msg_size=0) as ws:
+                await ws.send_str(big)
+                replies.append((await ws.receive(timeout=30)).data)
+        assert replies[0] == replies[1], replies
+        for _ in range(3):
+            conns = []
+            for _ in range(10):
+                r, w = await asyncio.open_connection("127.0.0.1", 9946)
+                w.write(b"GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                        b"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n")
+                assert (await r.readuntil(b"\r\n\r\n")).startswith(b"HTTP/1.1 101")
+                conns.append(w)
+            for w in conns:
+                w.transport.abort()
+            await asyncio.sleep(2)
+        async with s.ws_connect("ws://127.0.0.1:9946") as ws:
+            await ws.send_str(req(5, "system_health"))
+            assert '"result"' in (await ws.receive(timeout=10)).data
+
+asyncio.run(main())
+WSEOF
 docker rm -f "$C3" > /dev/null
 
 echo "check: TUNNEL_FILTER=false points the tunnel at the node directly"

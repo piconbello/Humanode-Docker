@@ -150,6 +150,8 @@ async def key_setup_open(app: web.Application) -> bool:
     if os.environ.get("TUNNEL_KEY_SETUP", "").strip().lower() in ("true", "on", "yes", "1"):
         return True
     try:
+        if (await _upstream_call(app, "system_health", []))["isSyncing"]:
+            return False
         account = ss58_account(await _upstream_call(app, "authorExt_getValidatorPublicKey", []))
         start = None
         while True:
