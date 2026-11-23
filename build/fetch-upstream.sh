@@ -7,6 +7,8 @@ OUT_CHAINSPEC="${OUT_CHAINSPEC:-/etc/humanode/chainspec.json}"
 PEER_REPO="${PEER_REPO:-humanode-network/humanode}"
 PEER_ASSET="${PEER_ASSET:-humanode-peer-x86_64-unknown-linux-gnu-ubuntu2404.tar.gz}"
 CHAINSPEC_FILE="${CHAINSPEC_FILE:-/build/chainspec.json}"
+OUT_TUNNEL="${OUT_TUNNEL:-/usr/local/bin/humanode-websocket-tunnel-client}"
+TUNNEL_URL="${TUNNEL_URL:-https://chainspec.mainnet.stages.humanode.io/latest/binaries/Linux-x86_64/humanode-websocket-tunnel-client}"
 
 if [ ! -f "$PEER_FILE" ]; then
     echo "fetch-upstream: peer pin file not found at $PEER_FILE" >&2
@@ -15,7 +17,7 @@ fi
 
 . "$PEER_FILE"
 
-for v in PEER_TAG PEER_COMMIT PEER_SHA256 CHAINSPEC_SHA256; do
+for v in PEER_TAG PEER_COMMIT PEER_SHA256 CHAINSPEC_SHA256 TUNNEL_SHA256; do
     eval "val=\${$v:-}"
     if [ -z "$val" ]; then
         echo "fetch-upstream: $v missing from $PEER_FILE" >&2
@@ -47,7 +49,12 @@ verify "$WORK/humanode-peer" "$PEER_SHA256" humanode-peer
 
 verify "$CHAINSPEC_FILE" "$CHAINSPEC_SHA256" chainspec.json
 
-mkdir -p "$(dirname "$OUT_BIN")" "$(dirname "$OUT_CHAINSPEC")"
+echo "fetch-upstream: downloading $TUNNEL_URL"
+curl -fsSL --retry 3 "$TUNNEL_URL" -o "$WORK/tunnel"
+verify "$WORK/tunnel" "$TUNNEL_SHA256" humanode-websocket-tunnel-client
+
+mkdir -p "$(dirname "$OUT_BIN")" "$(dirname "$OUT_CHAINSPEC")" "$(dirname "$OUT_TUNNEL")"
+install -m 0755 "$WORK/tunnel" "$OUT_TUNNEL"
 install -m 0755 "$WORK/humanode-peer" "$OUT_BIN"
 install -m 0644 "$CHAINSPEC_FILE" "$OUT_CHAINSPEC"
 install -m 0644 "$PEER_FILE" "$(dirname "$OUT_CHAINSPEC")/peer.env"

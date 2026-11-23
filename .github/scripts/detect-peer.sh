@@ -19,9 +19,10 @@ pick() {
 }
 peer_sha="$(pick humanode-peer)"
 cs_sha="$(pick chainspec.json)"
+tunnel_sha="$(pick humanode-websocket-tunnel-client)"
 
-if [ "$peer_sha" = "$PEER_SHA256" ] && [ "$cs_sha" = "$CHAINSPEC_SHA256" ]; then
-    echo "detect-peer: pinned peer and chainspec match mainnet manifest" >&2
+if [ "$peer_sha" = "$PEER_SHA256" ] && [ "$cs_sha" = "$CHAINSPEC_SHA256" ] && [ "$tunnel_sha" = "${TUNNEL_SHA256:-}" ]; then
+    echo "detect-peer: pinned peer, chainspec and tunnel client match mainnet manifest" >&2
     echo "changed=false" >> "$OUT"
     exit 0
 fi
@@ -58,6 +59,7 @@ check() {
 }
 check "peer sha256" "$peer_sha" '[0-9a-f]{64}'
 check "chainspec sha256" "$cs_sha" '[0-9a-f]{64}'
+check "tunnel sha256" "$tunnel_sha" '[0-9a-f]{64}'
 check "release tag" "$tag" '[A-Za-z0-9._-]{1,100}'
 check "commit" "$commit" '[0-9a-f]{40}'
 
@@ -78,6 +80,7 @@ PEER_TAG=$tag
 PEER_COMMIT=$commit
 PEER_SHA256=$peer_sha
 CHAINSPEC_SHA256=$cs_sha
+TUNNEL_SHA256=$tunnel_sha
 PIN
 
 short="$(printf '%s' "$commit" | cut -c1-7)"
@@ -91,4 +94,5 @@ echo "detect-peer: $PEER_TAG ($PEER_COMMIT) -> $tag ($commit)" >&2
     echo "short=$short"
     echo "peer_sha=$peer_sha"
     echo "chainspec_sha=$cs_sha"
+    echo "tunnel_sha=$tunnel_sha"
 } >> "$OUT"
