@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 
 import aiohttp
 import pytest
@@ -163,6 +164,11 @@ def test_tunnel_policy_allows_webapp_and_blocks_admin():
         "bioauth_enroll", "bioauth_enrollV2", "bioauth_enrollStepV1", "bioauth_authenticate",
         "bioauth_authenticateV2", "bioauth_authenticateStepV1", "state_subscribeStorage"}
 
+
+
+def test_classified_methods_exist_on_node():
+    node = set(Path(__file__).parents[2].joinpath("tests/image/rpc_methods.txt").read_text().split())
+    assert not (NODE_UNSAFE | ALLOWED | rpc_proxy.TUNNEL_BLOCKED | rpc_proxy.KEY_SETUP) - node
 
 @pytest.fixture
 async def tunnel_stack(monkeypatch):

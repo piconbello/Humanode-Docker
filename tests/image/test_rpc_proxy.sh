@@ -84,6 +84,12 @@ missing = ALLOWED - set(json.load(urllib.request.urlopen(req))["result"]["method
 assert not missing, sorted(missing)
 EOF
 
+echo "check: node RPC methods match the classified snapshot"
+docker exec "$C2" curl -sS -m 10 -H 'Content-Type: application/json' -d "$(req rpc_methods)" http://127.0.0.1:9944 \
+    | python3 -c 'import json, sys; print("\n".join(sorted(json.load(sys.stdin)["result"]["methods"])))' \
+    | diff -u "$(dirname "$0")/rpc_methods.txt" - \
+    || fail "humanode-peer RPC methods changed: add new unsafe ones to TUNNEL_BLOCKED in bot/src/hmnd_bot/rpc_proxy.py, then update tests/image/rpc_methods.txt"
+
 echo "check: allowed methods work through the published port"
 rpc "$URL" "$(req eth_chainId)" | grep -q '"result":"0x' || fail "eth_chainId not served"
 rpc "$URL" "$(req system_health)" | grep -q '"result":{' || fail "system_health not served"
