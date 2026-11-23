@@ -87,7 +87,8 @@ RUN chmod 0755 /entrypoint.sh /usr/local/bin/insert-key.sh \
     && chmod 0755 /etc/s6-overlay/s6-rc.d/node/run /etc/s6-overlay/s6-rc.d/node/finish \
     && chmod 0755 /etc/s6-overlay/s6-rc.d/bot/run \
     && chmod 0755 /etc/s6-overlay/s6-rc.d/tunnel/run \
-    && chmod 0755 /etc/s6-overlay/s6-rc.d/rpc-proxy/run
+    && chmod 0755 /etc/s6-overlay/s6-rc.d/rpc-proxy/run \
+    && chmod 0755 /etc/s6-overlay/s6-rc.d/tunnel-proxy/run
 
 VOLUME ["/data"]
 

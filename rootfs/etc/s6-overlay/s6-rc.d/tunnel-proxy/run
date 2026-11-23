@@ -1,0 +1,8 @@
+#!/command/with-contenv sh
+set -eu
+if [ "${VALIDATOR:-false}" != "true" ] || [ "${TUNNEL_FILTER:-true}" = "false" ]; then
+    echo "tunnel-proxy: disabled"
+    exec sleep infinity
+fi
+exec 2>&1
+exec s6-setuidgid nobody python3 -m hmnd_bot.rpc_proxy tunnel

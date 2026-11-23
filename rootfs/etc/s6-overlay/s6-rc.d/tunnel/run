@@ -8,18 +8,24 @@ if [ "${VALIDATOR:-false}" != "true" ]; then
     exec sleep infinity
 fi
 
-echo "tunnel: waiting for node RPC on 127.0.0.1:9944..."
+RPC_PORT=9946
+if [ "${TUNNEL_FILTER:-true}" = "false" ]; then
+    RPC_PORT=9944
+    echo "tunnel: WARNING: TUNNEL_FILTER=false exposes every node RPC method through the tunnel"
+fi
+
+echo "tunnel: waiting for RPC on 127.0.0.1:${RPC_PORT}..."
 until curl -sS -o /dev/null -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}' \
-    http://127.0.0.1:9944 2>/dev/null; do
+    "http://127.0.0.1:${RPC_PORT}" 2>/dev/null; do
     sleep 2
 done
-echo "tunnel: node RPC is up"
+echo "tunnel: RPC is up on ${RPC_PORT}"
 
 if [ -n "${NGROK_AUTHTOKEN:-}" ]; then
     echo "tunnel: using ngrok (NGROK_AUTHTOKEN is set)"
     export NGROK_AUTHTOKEN
-    ngrok-real http 9944 \
+    ngrok-real http "${RPC_PORT}" \
         --log stdout --log-format logfmt \
         --traffic-policy-file /etc/ngrok/policy.yml &
     TUNNEL_PID=$!
@@ -29,7 +35,7 @@ else
     TUNNEL_SERVER_ADDR="main.ws-tunnel.humanode.io:8000" \
     TUNNEL_SERVER_IP_FAMILY="IPv4" \
     TUNNEL_MAX_IDLE_TIMEOUT="${TUNNEL_MAX_IDLE_TIMEOUT:-60s}" \
-    TARGET_URL="ws://127.0.0.1:9944" \
+    TARGET_URL="ws://127.0.0.1:${RPC_PORT}" \
     humanode-websocket-tunnel-client &
     TUNNEL_PID=$!
     TUNNEL_TYPE="humanode-ws-tunnel"

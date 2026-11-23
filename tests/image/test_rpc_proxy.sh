@@ -5,11 +5,12 @@ IMAGE="${IMAGE:-hmnd-validator:test}"
 HOST_PORT="${HOST_PORT:-19945}"
 C1="hmnd-rpc-off-$$"
 C2="hmnd-rpc-on-$$"
+C3="hmnd-rpc-tunnel-$$"
 ZERO_HASH="0x0000000000000000000000000000000000000000000000000000000000000000"
 LIVENESS='[{"faceScan":"","auditTrailImage":"","lowQualityAuditTrailImage":""}]'
 
 cleanup() {
-    docker rm -f "$C1" "$C2" > /dev/null 2>&1 || true
+    docker rm -f "$C1" "$C2" "$C3" > /dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
@@ -36,6 +37,15 @@ wait_rpc() {
     done
 }
 
+wait_log() {
+    i=0
+    until docker logs "$1" 2>&1 | grep -q "$2"; do
+        i=$((i + 1))
+        [ "$i" -lt 30 ] || fail "$1: no log line '$2'"
+        sleep 1
+    done
+}
+
 peer_args() {
     docker exec "$1" sh -c 'ps -o args= -C humanode-peer'
 }
@@ -49,6 +59,7 @@ if docker exec "$C1" curl -s -m 2 -o /dev/null "http://127.0.0.1:9945" 2>/dev/nu
     fail "proxy listening while RPC_PROXY unset"
 fi
 docker logs "$C1" 2>&1 | grep -q 'rpc-proxy: disabled' || fail "no rpc-proxy disabled notice"
+docker logs "$C1" 2>&1 | grep -q 'tunnel-proxy: disabled' || fail "tunnel filter running without VALIDATOR"
 docker rm -f "$C1" > /dev/null
 
 echo "check: proxy on, extra args passed through"
@@ -111,5 +122,28 @@ echo "$direct" | grep -q 'validatorKeyNotAvailable' || fail "unexpected bioauth_
 docker exec "$C2" curl -sS -m 10 -H 'Content-Type: application/json' \
     -d "$(req state_traceBlock "[\"$ZERO_HASH\",null,null,null]")" http://127.0.0.1:9944 \
     | grep -q 'unsafe' && fail "loopback switched to safe mode"
+
+echo "check: validator tunnel goes through the filter on 127.0.0.1:9946"
+docker run -d --name "$C3" --network none -e VALIDATOR=true "$IMAGE" > /dev/null
+wait_rpc "$C3" 9944
+wait_rpc "$C3" 9946
+docker exec "$C3" sh -c 'ps -o user=,args= -C python3' | grep 'rpc_proxy tunnel' | grep -q '^nobody' \
+    || fail "tunnel filter not running as nobody"
+wait_log "$C3" 'tunnel: RPC is up on 9946'
+tun() { docker exec "$C3" curl -sS -m 10 -H 'Content-Type: application/json' -d "$1" http://127.0.0.1:9946; }
+for m in author_insertKey author_hasKey system_addReservedPeer state_traceBlock offchain_localStorageSet author_rotateKeys authorExt_setKeys; do
+    tun "$(req "$m")" | grep -q 'Method not allowed' || fail "$m not blocked on the tunnel"
+done
+tun "$(req bioauth_status)" | grep -q '"result"' || fail "bioauth_status blocked on the tunnel"
+tun "$(req bioauth_enroll "$LIVENESS")" | grep -q 'validatorKeyNotAvailable' || fail "bioauth_enroll not forwarded on the tunnel"
+docker exec "$C3" curl -sS -m 10 --request-target 'abcd.ws1.htunnel.app' -H 'Content-Type: application/json' \
+    -d "$(req system_health)" http://127.0.0.1:9946 | grep -q '"result"' || fail "hostname request target rejected"
+docker rm -f "$C3" > /dev/null
+
+echo "check: TUNNEL_FILTER=false points the tunnel at the node directly"
+docker run -d --name "$C3" --network none -e VALIDATOR=true -e TUNNEL_FILTER=false "$IMAGE" > /dev/null
+wait_rpc "$C3" 9944
+wait_log "$C3" 'tunnel: RPC is up on 9944'
+docker logs "$C3" 2>&1 | grep -q 'tunnel-proxy: disabled' || fail "tunnel filter still running"
 
 echo "PASS: rpc proxy"
