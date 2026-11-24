@@ -92,7 +92,7 @@ cmd_validate() {
     token=$(env_get TELEGRAM_BOT_TOKEN)
     userid=$(env_get TELEGRAM_USER_ID)
     enable=$(env_get ENABLE_BOT)
-    case "$(printf '%s' "$enable" | tr '[:upper:]' '[:lower:]')" in true|on|yes|1) ;; *) enable="" ;; esac
+    case "$(printf '%s' "$enable" | tr '[:upper:]' '[:lower:]')" in true|on|yes|1) enable=true ;; *) enable="" ;; esac
 
     if [ -z "$(env_get VALIDATOR)" ]; then
         c_ylw "VALIDATOR            not set   -> node only, no tunnel, no bioauth"

@@ -1,0 +1,6 @@
+#!/bin/sh
+case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    true|on|yes|1) echo true ;;
+    false|off|no|0) echo false ;;
+    *) echo "$2" ;;
+esac

@@ -16,16 +16,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _StalledState:
     since: datetime
+    alerted_at: datetime
     stopped_at: int
     reminders_fired: int
 
 
 def reminder_due(elapsed: timedelta, offsets: list[timedelta], cadence: list[timedelta]) -> int:
-    """How many reminders are due `elapsed` after the alert.
-
-    Each cumulative offset is one reminder, and the last interval repeats
-    forever, so a cadence of "1h" means a reminder every hour until it clears.
-    """
     if not offsets:
         return 0
     crossed = 0
@@ -100,17 +96,15 @@ class StallDetector:
             return
 
         if self._stalled is None:
-            # Date the stall from the last advance, not from detection: otherwise
-            # every recovery message understates the outage by the threshold.
             self._stalled = _StalledState(
-                since=self._last_advance_at, stopped_at=block.number, reminders_fired=0
+                since=self._last_advance_at, alerted_at=now, stopped_at=block.number, reminders_fired=0
             )
             msg = self._format_stall_msg(block, health, elapsed)
             await self._safe_notify(msg)
             self._stalled.reminders_fired = 1
             return
 
-        elapsed_since_stall = now - self._stalled.since
+        elapsed_since_stall = now - self._stalled.alerted_at
         offsets = cumulative_offsets(self._cadence)
         due = self._reminder_due(elapsed_since_stall, offsets)
         if due > self._stalled.reminders_fired - 1:
@@ -135,17 +129,11 @@ class StallDetector:
 @dataclass
 class _LaggingState:
     since: datetime
+    alerted_at: datetime
     reminders_fired: int
 
 
 class FinalityLagDetector:
-    """Alerts when finality falls further behind the best block than it should.
-
-    Finality normally trails the tip by 2-3 blocks, so anything past `max_lag`
-    means GRANDPA is not keeping up - which a "has the finalized head advanced"
-    check would miss entirely while finality crawls forward behind a growing gap.
-    """
-
     def __init__(
         self,
         *,
@@ -183,7 +171,6 @@ class FinalityLagDetector:
         now = datetime.now(timezone.utc)
         lag = best.number - finalized.number
 
-        # A syncing or peerless node legitimately runs hundreds of blocks behind.
         if health.is_syncing or health.peers <= 0:
             return
 
@@ -202,12 +189,12 @@ class FinalityLagDetector:
             if self._over_since is None:
                 self._over_since = now
                 return
-            self._lagging = _LaggingState(since=self._over_since, reminders_fired=1)
+            self._lagging = _LaggingState(since=self._over_since, alerted_at=now, reminders_fired=1)
             await self._safe_notify(self._format_msg(best, finalized, lag, health))
             return
 
         offsets = cumulative_offsets(self._cadence)
-        due = reminder_due(now - self._lagging.since, offsets, self._cadence)
+        due = reminder_due(now - self._lagging.alerted_at, offsets, self._cadence)
         if due > self._lagging.reminders_fired - 1:
             await self._safe_notify(self._format_msg(best, finalized, lag, health))
             self._lagging.reminders_fired = due + 1

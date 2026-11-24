@@ -80,11 +80,8 @@ _DEFAULTS: dict[str, str] = {
     "SYNC_MODE": "full",
     "BIOAUTH_REMIND_BEFORE": "1s",
     "BIOAUTH_REMIND_AFTER": "15m,45m,2h,3h,6h,12h,2d,4d",
-    # 5 blocks at the 6s nominal block time. Set to "off" to disable.
     "BLOCK_STALL_THRESHOLD": "30s",
-    # Alert as soon as it is detected, then once an hour until it clears.
     "BLOCK_STALL_REMIND_AFTER": "1h",
-    # Finality normally trails the best block by 2-3 blocks; 4+ is a real lag.
     "FINALITY_MAX_LAG": "3",
     "FINALITY_LAG_REMIND_AFTER": "1h",
     "CATCHUP_MAX_BLOCK_AGE": "2m",

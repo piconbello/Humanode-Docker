@@ -38,10 +38,11 @@ in a single prompt:
 3. **Governance alerts** — Do they want governance proposal notifications? If yes,
    which tiers? The three options are independent (multi-select):
    - **New proposals** (`GOV_NEW_PROPOSALS`) — notified when a proposal is submitted
-   - **Stage changes** (`GOV_STAGE_CHANGES`) — notified on pool advances, failures, window closures
+   - **Stage changes** (`GOV_STAGE_CHANGES`) — notified when a proposal advances from the pool, fails,
+     its window ends, it returns to draft, a vote passes into the veto window, or a vote is finalized
    - **Milestones** (`GOV_MILESTONES`) — notified on formation milestone submissions
 
-   Set each chosen tier to `on` in `.env`. Leave unset or empty to disable. Off by default.
+   Set each chosen tier to `true` in `.env`. Leave unset or set `false` to disable. Off by default.
 
 4. **Seed mnemonic** — After the node is healthy, tell the user to run `seed.sh`.
    It needs a real interactive terminal for the hidden prompt, so **where** they
@@ -162,14 +163,14 @@ The last entry also sets the repeat interval once the ladder is exhausted (`4d` 
 
 Units are `s`, `m`, `h`, `d`. Zero durations are rejected everywhere.
 
-Stall alerts remain opt-in; `reminders on` turns them on too:
+Stall alerts are on by default; `reminders off` turns them off too:
 
 | setting | default | meaning |
 |---|---|---|
 | `BIOAUTH_REMIND_BEFORE` | `1s` | absolute; fires 1s before expiry |
 | `BIOAUTH_REMIND_AFTER` | `15m,45m,2h,3h,6h,12h,2d,4d` | cumulative; fires 15m → 7d, then every 4d |
-| `BLOCK_STALL_THRESHOLD` / `_REMIND_AFTER` | `10m` / `30m,1h,2h` | block production stalled |
-| `FINALITY_STALL_THRESHOLD` / `_REMIND_AFTER` | `30m` / `1h,2h` | finality stalled |
+| `BLOCK_STALL_THRESHOLD` / `_REMIND_AFTER` | `30s` / `1h` | best block has not advanced |
+| `FINALITY_MAX_LAG` / `FINALITY_LAG_REMIND_AFTER` | `3` / `1h` | finality trails the best block by more than this |
 
 `validate` reports the **effective** settings by running the project's own config parser, so
 it stays correct even if the defaults change:
@@ -301,8 +302,8 @@ Other commands: `logs [n]` (ANSI stripped), `down` (keep `./data`), `destroy` (w
   `off` (or `none`). Deleting the line entirely also leaves reminders on.
 - **Stall alerts need both halves.** A threshold without its `_REMIND_AFTER` list, or vice
   versa, is silently inert.
-- **`ENABLE_BOT` gates the whole bot**: `true`, `on`, `yes` or `1` starts it, anything else
-  leaves it off. It and the two Telegram settings are absent from `README.md`.
+- **`ENABLE_BOT` gates the whole bot**: `true` starts it, anything else leaves it off.
+  All on/off settings take `true` or `false`. It and the two Telegram settings are absent from `README.md`.
 - **A bad bot token restart-loops forever**, about every 4 seconds, logging
   `TELEGRAM_BOT_TOKEN looks like a placeholder; refusing to start`. The node and tunnel are
   unaffected — only the logs suffer. `validate` catches this before you ever start.

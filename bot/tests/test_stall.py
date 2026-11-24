@@ -232,3 +232,23 @@ async def test_single_poll_blip_sends_nothing():
     node.lag = 2
     await det._tick()
     assert sent == []
+
+
+async def test_reminders_count_from_the_alert_when_threshold_exceeds_cadence(monkeypatch):
+    monkeypatch.setattr("hmnd_bot.stall.datetime", _Clock)
+    start = _Clock.t = datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc)
+    node, fired = BlockNode(number=100), []
+
+    async def notify(text):
+        fired.append(_Clock.t - start)
+
+    det = StallDetector(
+        name="block", node=node, first_sync=NeverSynced(),
+        fetch_block=type(node).best_block,
+        threshold=timedelta(minutes=5),
+        remind_cadence=[timedelta(minutes=2)], notify=notify,
+    )
+    for _ in range(21):
+        await det._tick()
+        _Clock.t += timedelta(seconds=30)
+    assert fired == [timedelta(minutes=m) for m in (5, 7, 9)]

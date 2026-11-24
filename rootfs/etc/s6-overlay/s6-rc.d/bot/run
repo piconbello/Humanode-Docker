@@ -1,11 +1,8 @@
 #!/command/with-contenv sh
 set -eu
-case "$(printf '%s' "${ENABLE_BOT:-}" | tr '[:upper:]' '[:lower:]')" in
-    true|on|yes|1) ;;
-    *)
-        echo "bot: disabled (set ENABLE_BOT=true to enable)"
-        exec sleep infinity
-        ;;
-esac
+if [ "$(flag "${ENABLE_BOT:-}" false)" != "true" ]; then
+    echo "bot: disabled (set ENABLE_BOT=true to enable)"
+    exec sleep infinity
+fi
 exec 2>&1
 exec s6-setuidgid botuser python3 -m hmnd_bot

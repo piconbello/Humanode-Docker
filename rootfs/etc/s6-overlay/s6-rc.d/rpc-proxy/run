@@ -1,7 +1,7 @@
 #!/command/with-contenv sh
 set -eu
 
-if [ "${RPC_PROXY:-false}" != "true" ]; then
+if [ "$(flag "${RPC_PROXY:-}" false)" != "true" ]; then
     echo "rpc-proxy: disabled (set RPC_PROXY=true to enable)"
     exec sleep infinity
 fi

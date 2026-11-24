@@ -3,13 +3,13 @@ set -eu
 
 s6-svperms -G botuser /run/service/tunnel
 
-if [ "${VALIDATOR:-false}" != "true" ]; then
+if [ "$(flag "${VALIDATOR:-}" false)" != "true" ]; then
     echo "tunnel: disabled (VALIDATOR is not true)"
     exec sleep infinity
 fi
 
 RPC_PORT=9946
-if [ "${TUNNEL_FILTER:-true}" = "false" ]; then
+if [ "$(flag "${TUNNEL_FILTER:-}" true)" = "false" ]; then
     RPC_PORT=9944
     echo "tunnel: WARNING: TUNNEL_FILTER=false exposes every node RPC method through the tunnel"
 fi

@@ -1,6 +1,6 @@
 #!/command/with-contenv sh
 set -eu
-if [ "${VALIDATOR:-false}" != "true" ] || [ "${TUNNEL_FILTER:-true}" = "false" ]; then
+if [ "$(flag "${VALIDATOR:-}" false)" != "true" ] || [ "$(flag "${TUNNEL_FILTER:-}" true)" = "false" ]; then
     echo "tunnel-proxy: disabled"
     exec sleep infinity
 fi
