@@ -77,7 +77,7 @@ jobs:
             artifacts/chainspec.json
           delete-branch: true
           body: |
-            Mainnet manifest now ships a different humanode-peer / chainspec. Merges automatically once CI is green.
+            Mainnet manifest now ships a different humanode-peer / chainspec / tunnel client. Merges automatically once CI is green.
 
             | | Tag | Commit |
             |---|---|---|
@@ -86,6 +86,7 @@ jobs:
 
             - peer sha256: `${{ steps.detect.outputs.peer_sha }}`
             - chainspec sha256: `${{ steps.detect.outputs.chainspec_sha }}`
+            - tunnel client sha256: `${{ steps.detect.outputs.tunnel_sha }}`
 
             Release: https://github.com/humanode-network/humanode/releases/tag/${{ steps.detect.outputs.tag }}
 

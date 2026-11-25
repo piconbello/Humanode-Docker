@@ -1,14 +1,8 @@
-#!/command/execlineb -P
-
-with-contenv
-importas -D "" ENABLE_BOT ENABLE_BOT
-
-ifelse { eltest -z ${ENABLE_BOT} }
-{
-  if { s6-echo "bot: disabled (set ENABLE_BOT=true to enable)" }
-  sleep infinity
-}
-
-fdmove -c 2 1
-s6-setuidgid botuser
-python3 -m hmnd_bot
+#!/command/with-contenv sh
+set -eu
+if [ "$(flag "${ENABLE_BOT:-}" false)" != "true" ]; then
+    echo "bot: disabled (set ENABLE_BOT=true to enable)"
+    exec sleep infinity
+fi
+exec 2>&1
+exec s6-setuidgid botuser python3 -m hmnd_bot

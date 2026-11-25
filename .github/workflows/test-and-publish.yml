@@ -3,6 +3,11 @@ name: test-and-publish
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      preview:
+        description: Publish only a preview-<sha> tag, no latest and no release
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths-ignore:
@@ -67,6 +72,8 @@ jobs:
         run: IMAGE=hmnd-validator:test sh tests/image/test_insert_key.sh
       - name: test_seed_not_logged
         run: IMAGE=hmnd-validator:test sh tests/image/test_seed_not_logged.sh
+      - name: test_rpc_proxy
+        run: IMAGE=hmnd-validator:test sh tests/image/test_rpc_proxy.sh
 
   sync-test:
     name: Sync + RPC contract test
@@ -139,7 +146,7 @@ jobs:
   publish:
     name: Publish to GHCR
     needs: [bot-unit-tests, image-tests, sync-test]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main') || inputs.preview
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -174,6 +181,23 @@ jobs:
       - name: Lowercase repository name
         id: repo
         run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - name: Tags
+        id: tags
+        env:
+          IMG: ghcr.io/${{ steps.repo.outputs.name }}
+          PREVIEW: ${{ inputs.preview }}
+        run: |
+          if [ "$PREVIEW" = "true" ]; then
+            V="preview-$(git rev-parse --short=7 HEAD)"
+            echo "version=$V" >> "$GITHUB_OUTPUT"
+            printf 'list<<EOF\n%s:%s\nEOF\n' "$IMG" "$V" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "version=${{ steps.version.outputs.internal }}" >> "$GITHUB_OUTPUT"
+          printf 'list<<EOF\n%s:%s\n%s:%s\n%s:peer-%s\n%s:latest\nEOF\n' \
+            "$IMG" "${{ steps.version.outputs.internal }}" \
+            "$IMG" "${{ steps.version.outputs.upstream }}" \
+            "$IMG" "${{ steps.version.outputs.peer_short }}" "$IMG" >> "$GITHUB_OUTPUT"
       - name: Build + push (linux/amd64)
         uses: docker/build-push-action@v7
         with:
@@ -181,15 +205,12 @@ jobs:
           platforms: linux/amd64
           push: true
           build-args: |
-            IMAGE_VERSION=${{ steps.version.outputs.internal }}
+            IMAGE_VERSION=${{ steps.tags.outputs.version }}
             PEER_TAG=${{ steps.version.outputs.peer_tag }}
             PEER_COMMIT=${{ steps.version.outputs.peer_commit }}
-          tags: |
-            ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.internal }}
-            ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.upstream }}
-            ghcr.io/${{ steps.repo.outputs.name }}:peer-${{ steps.version.outputs.peer_short }}
-            ghcr.io/${{ steps.repo.outputs.name }}:latest
+          tags: ${{ steps.tags.outputs.list }}
       - name: Create GitHub Release
+        if: ${{ !inputs.preview }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

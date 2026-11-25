@@ -1,0 +1,10 @@
+#!/command/with-contenv sh
+set -eu
+
+if [ "$(flag "${RPC_PROXY:-}" false)" != "true" ]; then
+    echo "rpc-proxy: disabled (set RPC_PROXY=true to enable)"
+    exec sleep infinity
+fi
+
+exec 2>&1
+exec s6-setuidgid nobody python3 -m hmnd_bot.rpc_proxy

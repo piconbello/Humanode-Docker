@@ -92,6 +92,7 @@ cmd_validate() {
     token=$(env_get TELEGRAM_BOT_TOKEN)
     userid=$(env_get TELEGRAM_USER_ID)
     enable=$(env_get ENABLE_BOT)
+    case "$(printf '%s' "$enable" | tr '[:upper:]' '[:lower:]')" in true|on|yes|1) enable=true ;; *) enable="" ;; esac
 
     if [ -z "$(env_get VALIDATOR)" ]; then
         c_ylw "VALIDATOR            not set   -> node only, no tunnel, no bioauth"
@@ -184,7 +185,7 @@ if c.bioauth_remind_after:
     print(f"AFTER={fmt(fires)}")
     print(f"REPEAT={fmt([c.bioauth_remind_after[-1]])}")
 print(f"BLOCKSTALL={'on' if c.block_stall_threshold and c.block_stall_remind_after else 'off'}")
-print(f"FINALITY={'on' if c.finality_stall_threshold and c.finality_stall_remind_after else 'off'}")
+print(f"FINALITY={'on' if c.finality_max_lag and c.finality_lag_remind_after else 'off'}")
 PY
 )
     prc=$?
@@ -283,18 +284,19 @@ cmd_reminders() {
     case "${1:-on}" in
         on)
             sed -i '/^BIOAUTH_REMIND_/d' .env
-            env_set BLOCK_STALL_THRESHOLD "10m"
-            env_set BLOCK_STALL_REMIND_AFTER "30m,1h,2h"
-            env_set FINALITY_STALL_THRESHOLD "30m"
-            env_set FINALITY_STALL_REMIND_AFTER "1h,2h"
+            env_set BLOCK_STALL_THRESHOLD "30s"
+            env_set BLOCK_STALL_REMIND_AFTER "1h"
+            env_set FINALITY_MAX_LAG "3"
+            env_set FINALITY_LAG_REMIND_AFTER "1h"
             c_grn "facescan reminders restored to defaults; stall alerts enabled"
             ;;
         off)
             env_set BIOAUTH_REMIND_BEFORE off
             env_set BIOAUTH_REMIND_AFTER off
-            sed -i '/^BLOCK_STALL_/d;/^FINALITY_STALL_/d' .env
-            c_ylw "facescan reminders disabled (bot answers commands only)"
-            c_ylw "note: deleting the lines is not enough - reminders are ON by default"
+            env_set BLOCK_STALL_THRESHOLD off
+            env_set FINALITY_MAX_LAG off
+            c_ylw "facescan reminders and stall alerts disabled (bot answers commands only)"
+            c_ylw "note: deleting the lines is not enough - both are ON by default"
             ;;
         *) c_red "usage: $0 reminders [on|off]"; exit 1 ;;
     esac
@@ -313,48 +315,7 @@ cmd_ngrok() {
     fi
 }
 
-cmd_build() { hdr "build"; dc build; }
-
-git_branch() { git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'unknown'; }
-
-# The image docker-compose.yml will actually run, tag interpolation included.
-image_ref() { dc config --images 2>/dev/null | head -1; }
-
-# Pull the published image only when this checkout matches what produced it.
-# GHCR is published from pushes to main, so anywhere else it would run code that
-# is not the code in front of you. Every other case builds locally, which tags
-# the build with the same ref so compose picks it up either way.
-cmd_pull() {
-    hdr "pull"
-    local image branch
-    image="$(image_ref)"
-    [ -n "$image" ] || { c_red "could not resolve the image from docker-compose.yml"; exit 1; }
-    printf 'image       %s\n' "$image"
-    branch="$(git_branch)"
-
-    if [ "$branch" != "main" ]; then
-        c_ylw "on branch '${branch}', not main"
-        c_ylw "the published image is built from main and would not contain this checkout's changes"
-        c_ylw "building locally instead"
-        cmd_build
-        return
-    fi
-
-    if [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]; then
-        c_ylw "working tree has uncommitted changes; the published image would not match them"
-        c_ylw "building locally instead"
-        cmd_build
-        return
-    fi
-
-    if docker pull "$image"; then
-        c_grn "pulled $image"
-        return
-    fi
-
-    c_ylw "pull failed (offline, package not public, or no such tag); building locally instead"
-    cmd_build
-}
+cmd_pull() { hdr "pull"; dc pull; }
 
 cmd_up() {
     need_env
@@ -492,12 +453,11 @@ setup and validation
   validate                  check every setting, live-verify the telegram token
   validator                 set VALIDATOR=true
   telegram <token> <userid> live-verify the token, then write bot settings
-  reminders [on|off]        facescan reminders + stall alerts (OFF by default)
+  reminders [on|off]        facescan reminders + stall alerts (ON by default)
   ngrok [token]             use ngrok (token) or the native tunnel (no args)
 
 running
-  pull                      pull the pinned image on a clean main, else build locally
-  build                     always build locally (docker compose build)
+  pull                      pull the image docker-compose.yml names
   up                        validate, start, wait for node RPC
   seed                      insert session key (mnemonic on stdin ONLY)
   status                    node / keystore / tunnel / bot
@@ -517,7 +477,6 @@ case "${1:-}" in
     reminders) shift; cmd_reminders "${1:-on}" ;;
     ngrok) shift; cmd_ngrok "${1:-}" ;;
     pull) cmd_pull ;;
-    build) cmd_build ;;
     up) cmd_up ;;
     seed) cmd_seed ;;
     status) cmd_status ;;

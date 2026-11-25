@@ -48,3 +48,26 @@ async def test_fires_once_on_transition(tmp_path: Path, monkeypatch):
     assert w.is_complete
     assert notify.await_count == 1
     assert marker.exists()
+
+
+async def test_rpc_error_is_retried_not_fatal(tmp_path: Path, monkeypatch):
+    from hmnd_bot.node import NodeRpcError
+    monkeypatch.setattr("hmnd_bot.first_sync.asyncio.sleep", AsyncMock(return_value=None))
+    fake = FakeNode([Health(peers=4, is_syncing=False, should_have_peers=True)],
+                    [BlockInfo(0, None), BlockInfo(200, None)])
+    fake.prime()
+    real = fake.system_health
+    calls = 0
+
+    async def flaky():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise NodeRpcError("system_health returned HTTP 503")
+        return await real()
+
+    fake.system_health = flaky
+    notify = AsyncMock()
+    w = FirstSyncWatcher(node=fake, notify=notify, marker_path=tmp_path / "marker")
+    await asyncio.wait_for(w.run(), timeout=2)
+    assert notify.await_count == 1

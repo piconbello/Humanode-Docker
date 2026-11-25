@@ -288,7 +288,7 @@ class CatchupDetector:
         crossed = [m for m in self._checkpoints if m not in self._passed and lag < m]
         if crossed:
             self._passed.update(crossed)
-            self._append_notice(f"⏳ Still syncing — {_blocks(self._last_gap)} behind.")
+            self._append_notice(f"⏳ Still syncing — {format_blocks(self._last_gap)} behind.")
 
         if self._best_lag is None or lag <= self._best_lag - PROGRESS_EPSILON:
             self._best_lag = lag
@@ -303,7 +303,7 @@ class CatchupDetector:
         if due > self._no_progress_fired:
             self._no_progress_fired = due
             self._append_notice(
-                f"⚠️ Sync is not progressing — still {_blocks(self._last_gap)} behind."
+                f"⚠️ Sync is not progressing — still {format_blocks(self._last_gap)} behind."
             )
 
     def _append_notice(self, text: str) -> None:
@@ -316,7 +316,7 @@ class CatchupDetector:
         if elapsed < self._no_progress_after:
             return 0
         stalled = elapsed - self._no_progress_after
-        offsets = _cumulative_offsets(self._no_progress_cadence)
+        offsets = cumulative_offsets(self._no_progress_cadence)
         due = 1
         for off in offsets:
             if stalled >= off:
@@ -326,7 +326,8 @@ class CatchupDetector:
             due += int((stalled - offsets[-1]) / tail)
         return due
 
-def _blocks(gap: int | None) -> str:
+
+def format_blocks(gap: int | None) -> str:
     if gap is None:
         return "unknown blocks"
     if gap >= 1_000_000:
@@ -336,18 +337,18 @@ def _blocks(gap: int | None) -> str:
     return f"{gap} blocks"
 
 
-def _human(d: timedelta) -> str:
+def format_duration(d: timedelta) -> str:
     total = int(d.total_seconds())
     if total < 60:
         return f"{total}s"
     if total < 3600:
-        return f"{total // 60}m"
+        return f"{total // 60}m {total % 60}s"
     if total < 86400:
         return f"{total // 3600}h {(total % 3600) // 60}m"
     return f"{total // 86400}d {(total % 86400) // 3600}h"
 
 
-def _cumulative_offsets(cadence: list[timedelta]) -> list[timedelta]:
+def cumulative_offsets(cadence: list[timedelta]) -> list[timedelta]:
     total = timedelta()
     out: list[timedelta] = []
     for d in cadence:

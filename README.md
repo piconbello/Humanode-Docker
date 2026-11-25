@@ -77,3 +77,8 @@ You can look up your node on the [Humanode Telemetry](https://telemetry.humanode
 | `DB_CACHE` | `256` | Database cache size in MiB. Limits RocksDB memory usage. |
 | `STATE_PRUNING` | _(binary default: 256)_ | State pruning mode: `archive`, `archive-canonical`, or a number of blocks to keep. Can only be set on first run. |
 | `BLOCKS_PRUNING` | _(binary default: archive-canonical)_ | Block pruning mode: `archive`, `archive-canonical`, or a number of blocks to keep. |
+| `NODE_EXTRA_ARGS` | _(empty)_ | Extra `humanode-peer` flags, appended as-is. Do not repeat flags the image already sets. With `VALIDATOR=true`, node RPC exposure flags are unsafe either way: safe mode breaks bioauth, unsafe mode exposes key methods. Use `RPC_PROXY`. |
+| `RPC_PROXY` | `false` | Set to `true` to serve an allowlist of read-only `eth_`/`chain_`/`state_`/`system_` methods plus `eth_sendRawTransaction`. Key, bioauth and node-admin methods are refused. Node RPC stays on loopback. |
+| `RPC_PROXY_PORT` | `9945` | Proxy listen port. |
+| `TUNNEL_FILTER` | `true` | With `VALIDATOR=true`, the bioauth tunnel goes through a filter that refuses key-insert, peer/log admin, offchain and heavy state methods. `false` exposes every node RPC method through the tunnel. |
+| `TUNNEL_KEY_SETUP` | `false` | Session key setup through the tunnel is open only until the validator's session keys are on chain. `true` reopens it, e.g. after moving the node. |

@@ -21,15 +21,14 @@ RUN curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/
     && tar -C / -Jxpf /tmp/s6-arch.tar.xz \
     && rm /tmp/s6-noarch.tar.xz /tmp/s6-arch.tar.xz
 
-RUN curl -fsSL -o /tmp/ngrok.tgz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz \
-    && tar -C /tmp -xzf /tmp/ngrok.tgz \
-    && install -m 0755 /tmp/ngrok /usr/local/bin/ngrok-real \
-    && rm /tmp/ngrok.tgz /tmp/ngrok
-
-RUN curl -fsSL -o /tmp/hmnd-tunnel \
-        https://chainspec.mainnet.stages.humanode.io/latest/binaries/Linux-x86_64/humanode-websocket-tunnel-client \
-    && install -m 0755 /tmp/hmnd-tunnel /usr/local/bin/humanode-websocket-tunnel-client \
-    && rm /tmp/hmnd-tunnel
+ARG NGROK_VERSION=3.39.13
+ARG NGROK_SHA256=4399384bf4d6a5ad65136770a931536db9e97911f52686e3419dc434a74df75f
+RUN curl -fsSL -o /tmp/ngrok.deb \
+        "https://ngrok-agent.s3.amazonaws.com/pool/main/n/ngrok/ngrok_${NGROK_VERSION}-0_amd64.deb" \
+    && dpkg-deb -x /tmp/ngrok.deb /tmp/ngrok \
+    && echo "${NGROK_SHA256}  /tmp/ngrok/usr/local/bin/ngrok" | sha256sum -c - \
+    && install -m 0755 /tmp/ngrok/usr/local/bin/ngrok /usr/local/bin/ngrok-real \
+    && rm -rf /tmp/ngrok.deb /tmp/ngrok
 
 COPY artifacts/humanode-peer.env artifacts/chainspec.json /build/
 COPY build/fetch-upstream.sh /build/fetch-upstream.sh
@@ -84,10 +83,12 @@ RUN groupadd --system --gid 1100 hmnd \
 
 COPY rootfs/ /
 
-RUN chmod 0755 /entrypoint.sh /usr/local/bin/insert-key.sh \
+RUN chmod 0755 /entrypoint.sh /usr/local/bin/insert-key.sh /usr/local/bin/flag \
     && chmod 0755 /etc/s6-overlay/s6-rc.d/node/run /etc/s6-overlay/s6-rc.d/node/finish \
     && chmod 0755 /etc/s6-overlay/s6-rc.d/bot/run \
-    && chmod 0755 /etc/s6-overlay/s6-rc.d/tunnel/run
+    && chmod 0755 /etc/s6-overlay/s6-rc.d/tunnel/run \
+    && chmod 0755 /etc/s6-overlay/s6-rc.d/rpc-proxy/run \
+    && chmod 0755 /etc/s6-overlay/s6-rc.d/tunnel-proxy/run
 
 VOLUME ["/data"]
 

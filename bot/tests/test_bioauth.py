@@ -314,3 +314,59 @@ async def test_failed_notice_is_requeued(tmp_path):
     s = _sched(tmp_path, c, send_text=AsyncMock(side_effect=RuntimeError("down")))
     await s._step(NOW)
     assert c.notices == ["⏳ first", "⏳ second"]
+
+
+async def test_second_expiry_restarts_post_expiry_cadence(tmp_path):
+    c = FakeCatchup()
+    s = _sched(tmp_path, c)
+    await s._evaluate(NOW + timedelta(minutes=5))
+    assert (tmp_path / "slot.anchor").exists()
+
+    later = NOW + timedelta(days=7)
+    s._node.status = _active(later, timedelta(days=7))
+    await s._evaluate(later)
+    assert not (tmp_path / "slot.anchor").exists()
+
+    expiry = later + timedelta(days=7)
+    s._node.status = INACTIVE
+    s._send_photo.reset_mock()
+    await s._evaluate(expiry)
+    await s._evaluate(expiry + timedelta(minutes=5))
+    await s._evaluate(expiry + timedelta(minutes=20))
+    assert s._send_photo.await_count == 2
+    assert s._current_slot_id(INACTIVE, expiry + timedelta(minutes=20)).endswith(":post-1")
+
+
+async def test_wakes_at_reminder_boundary_instead_of_next_tick(tmp_path):
+    expires = NOW + timedelta(seconds=20)
+    status = BioauthStatus(is_active=True, expires_at_ms=int(expires.timestamp() * 1000), raw={})
+    s = _sched(tmp_path, FakeCatchup(), status=status, remind_before=[timedelta(seconds=1)])
+    await s._evaluate(NOW)
+    assert s._delay(NOW) == 19
+    boundary = expires - timedelta(seconds=1)
+    await s._evaluate(boundary)
+    s._send_photo.assert_awaited_once()
+    assert s._delay(boundary) == 30
+
+
+def test_stale_boundary_falls_back_to_tick(tmp_path):
+    s = _make(tmp_path)
+    s._next_due = NOW - timedelta(seconds=5)
+    assert s._delay(NOW) == 30
+
+
+async def test_tunnel_failure_warns_once_per_slot(tmp_path):
+    from hmnd_bot.tunnel import TunnelQuotaExceeded
+
+    class QuotaTunnel(FakeTunnel):
+        async def start(self_inner):
+            raise TunnelQuotaExceeded("quota")
+
+    anchor = NOW - timedelta(minutes=6)
+    (tmp_path / "slot.anchor").write_text(anchor.isoformat())
+    s = _sched(tmp_path, FakeCatchup(), tunnel=QuotaTunnel())
+    for i in range(10):
+        await s._evaluate(NOW + timedelta(seconds=30 * i))
+    assert s._send_text.await_count == 1
+    await s._evaluate(anchor + timedelta(minutes=21))
+    assert s._send_text.await_count == 2

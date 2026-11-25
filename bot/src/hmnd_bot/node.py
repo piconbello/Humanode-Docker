@@ -85,13 +85,6 @@ class NodeClient:
         self._session: aiohttp.ClientSession | None = None
         self._request_id = 0
 
-    async def __aenter__(self) -> "NodeClient":
-        await self.connect()
-        return self
-
-    async def __aexit__(self, *_: Any) -> None:
-        await self.close()
-
     async def connect(self) -> None:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT)
